@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -137,6 +139,51 @@ class DocsTests(unittest.TestCase):
                 f"README 里写死了测试用例数量 {hit.group(1) if hit else ''}，它会过时；"
                 f"改成「N 个测试文件」或直接写命令。\n  行：{line.strip()}",
             )
+
+
+class WiringScriptTests(unittest.TestCase):
+    """接线脚本必须存在且语法正确——它们是「clone 下来能不能真跑起来」的关键。"""
+
+    SCRIPTS = [
+        "wire-all.mjs",
+        "wire-bridge.mjs",
+        "wire-mcp.mjs",
+        "check-deps.mjs",
+        "verify-mcp-tools.mjs",
+    ]
+
+    def test_scripts_exist(self):
+        missing = [n for n in self.SCRIPTS if not (REPO / "scripts" / n).is_file()]
+        self.assertFalse(missing, f"scripts/ 缺少：{missing}")
+
+    @unittest.skipUnless(shutil.which("node"), "需要 node")
+    def test_scripts_pass_node_check(self):
+        bad = []
+        for name in self.SCRIPTS:
+            path = REPO / "scripts" / name
+            if not path.is_file():
+                continue
+            result = subprocess.run(
+                [shutil.which("node"), "--check", str(path)],
+                capture_output=True, text=True,
+            )
+            if result.returncode != 0:
+                bad.append(f"{name}: {result.stderr.strip().splitlines()[0] if result.stderr else '?'}")
+        self.assertFalse(bad, "接线脚本语法错误：\n  " + "\n  ".join(bad))
+
+    @unittest.skipUnless(shutil.which("node"), "需要 node")
+    def test_wire_all_has_dry_run(self):
+        """wire-all 必须支持 --dry-run，否则用户不敢跑。"""
+        src = (REPO / "scripts" / "wire-all.mjs").read_text(encoding="utf-8")
+        self.assertIn("--dry-run", src)
+        self.assertIn("--revert", src)
+
+    def test_wire_all_reverts_on_failure(self):
+        """接线脚本必须在语法检查失败时自动还原。"""
+        for name in ("wire-bridge.mjs", "wire-mcp.mjs"):
+            src = (REPO / "scripts" / name).read_text(encoding="utf-8")
+            self.assertIn("--check", src, f"{name} 没有 node --check 自检")
+            self.assertIn("bak", src, f"{name} 没有备份机制")
 
 
 class PackageJsonTests(unittest.TestCase):

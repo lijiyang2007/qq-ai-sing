@@ -42,3 +42,8 @@ desktop.ini
 
 # 运行时锁文件
 *.lock
+
+# 涓存椂鏂囦欢
+scripts/_*.txt
+scripts/_*.py
+scripts/_*.mjs

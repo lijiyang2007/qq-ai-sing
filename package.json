@@ -14,6 +14,8 @@
     "test:bridge": "node bridge/src/selftest.mjs && node bridge/src/selftest-mcp.mjs",
     "test:all": "npm run test && npm run test:bridge",
     "check-deps": "node scripts/check-deps.mjs",
+    "verify:mcp": "node scripts/verify-mcp-tools.mjs",
+    "wire": "node scripts/wire-all.mjs",
     "render:chorus": "cd pipeline && python -m hq_cover.jobs render --song \"示例歌曲 示例歌手\" --mode chorus --out ../test-run"
   },
   "keywords": [

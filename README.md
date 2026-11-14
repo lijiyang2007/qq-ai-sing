@@ -59,7 +59,11 @@ cd qq-ai-sing
    cd pipeline
    python -m hq_cover.jobs render --song "我怀念的 孙燕姿" --mode chorus --out D:/test-1
    ```
-5. **接 QQ** → [docs/BRIDGE_WIRING.md](docs/BRIDGE_WIRING.md)
+5. **接 QQ** → 一条命令：
+   ```bash
+   node scripts/wire-all.mjs C:\path\to\qq-bridge
+   ```
+   详见 [docs/BRIDGE_WIRING.md](docs/BRIDGE_WIRING.md)
 
 ---
 
@@ -132,6 +136,16 @@ cd ..
 node bridge/src/selftest.mjs        # 期望：29 项通过 / 0 项失败
 node bridge/src/selftest-mcp.mjs    # 期望：16 项通过 / 0 项失败
 ```
+
+接完桥接之后，还有一条**最硬的验证**——它真的 spawn 一个 MCP 进程、走
+`initialize` → `tools/list`，看 `qq_sing` 到底在不在工具清单里：
+
+```bash
+node scripts/verify-mcp-tools.mjs C:\path\to\qq-bridge
+```
+
+> 这条比自检重要。`selftest-mcp.mjs` 验的是「注册逻辑对不对」，
+> 而这条验的是「真实进程里到底有没有」。上游原版 38 个工具，接完应该 ≥39 个。
 
 第 3 步是最容易被跳过、也最不该跳过的：它验证 `qq_sing` 这类工具到底注册上没有、
 权限闸门对不对、请求有没有打到正确的路由。**不跑它就去群里点歌，失败时你分不清是

@@ -81,19 +81,58 @@ Copy-Item "$Repo\bridge\src\*.mjs"  "$Bridge\src\" -Force
 
 ---
 
-## 三、改桥接代码（4 步）
+## 三、接线（一条命令）
 
-> **先试自动接线**，它会按括号配对找位置、改完自动 `node --check`：
->
-> ```powershell
-> node scripts/wire-bridge.mjs C:\path\to\qq-bridge --dry-run   # 先看会改什么
-> node scripts/wire-bridge.mjs C:\path\to\qq-bridge             # 真改（自动备份）
-> ```
->
-> 它会做 3.1 + 3.2 + 3.3。**3.4（MCP 工具注册）还得手工做**，因为每个版本的
-> `mcp-snowluma-safe.js` 结构差异太大。
->
-> 失败或想自己改，看下面的手工步骤。
+```powershell
+node scripts/wire-all.mjs C:\path\to\qq-bridge --dry-run   # 先看会改什么
+node scripts/wire-all.mjs C:\path\to\qq-bridge             # 真改
+```
+
+它做四件事，每步都失败即停：
+
+| 步骤 | 做什么 |
+|---|---|
+| 1. 复制模块 | 11 个 `.js` 进 `qq-bridge/src/` |
+| 2. 接线 bridge.js | import + 装配 + 挂路由，位置用括号配对找 |
+| 3. 接线 MCP 工具 | `TOOL_CONFIG_FLAGS` 合并 + `registerSingTools` |
+| 4. 验证 | deps 检查 + **真实 MCP 握手**列出工具清单 |
+
+跑完你会看到：
+
+```
+✓ deps 检查：真正缺失 0 项
+✓ initialize 成功：snowluma-safe
+✓ tools/list 返回 39 个工具
+  OK    qq_sing 已注册
+  OK    qq_sing_status 已注册
+  OK    qq_relay_targets 已注册
+  OK    qq_relay_send 已注册
+```
+
+> **第 4 步是真验证，不是自检**：它真的 spawn 一个 MCP 进程、走
+> `initialize` → `tools/list`，看工具清单里到底有没有这四个。上游原版是 38 个，
+> 接完是 39+（取决于配置开关）。少一个就说明没接上。
+
+改坏了要还原：
+
+```powershell
+node scripts/wire-all.mjs C:\path\to\qq-bridge --revert
+```
+
+### 单独跑某一步
+
+```powershell
+node scripts/wire-bridge.mjs C:\path\to\qq-bridge    # 只接 bridge.js
+node scripts/wire-mcp.mjs    C:\path\to\qq-bridge    # 只接 MCP 工具
+node scripts/check-deps.mjs  C:\path\to\qq-bridge\src\bridge.js
+node scripts/verify-mcp-tools.mjs C:\path\to\qq-bridge
+```
+
+每个都支持 `--dry-run` 和 `--revert`。
+
+---
+
+## 三之二、手工接线（脚本失败时看这里）
 
 > `bridge.js` 每个版本都不一样，所以这里不给整份文件，也不给行号。
 > 找**锚点**（下面每步都写了），插在锚点旁边。
@@ -102,6 +141,7 @@ Copy-Item "$Repo\bridge\src\*.mjs"  "$Bridge\src\" -Force
 > 的**回调内部**，而且要在 `sendJson` / `readBody` 定义**之后**。
 > 这几个 deps 是回调作用域的闭包，放到外层（比如 `v2SessionAllowed` 那一层）会
 > 直接 `ReferenceError: sendJson is not defined`，启动就挂。
+> 这不是推测——是在纯净上游 clone 上实测出来的。
 
 ### 3.1 `src/bridge.js` — 引入装配器
 
@@ -185,24 +225,40 @@ sing.close();   // 清掉两个 setInterval，避免测试里进程不退
 
 ### 3.4 `src/mcp-snowluma-safe.js` — 注册工具
 
+> `wire-all.mjs` / `wire-mcp.mjs` 会自动做这一步。下面是手工版，供脚本失败时对照。
+
 ```js
 import { registerSingTools, SING_TOOL_FLAGS } from './mcp-sing-tools.js';
 ```
 
-在 `server` 创建之后：
+**两个位置，都要对：**
+
+**(a) 并进工具开关表** —— 接在 `const TOOL_CONFIG_FLAGS = { ... };` 这个块之后：
+
+```js
+Object.assign(TOOL_CONFIG_FLAGS, SING_TOOL_FLAGS);
+```
+
+> 这一步不能漏。漏了的话，控制台显示「工具已关闭」，但模型每次请求仍然收到
+> 完整 schema 和描述，调用后再吃 403 —— 白烧 token，还诱导模型误调。
+
+**(b) 注册工具** —— 接在 `server.tool` 被包装成 `registerTool` 的那个块之后
+（找 `const registerTool = server.registerTool.bind(server);`，它外面是一个单独的 `{`）：
 
 ```js
 registerSingTools(server, { z, agentApi, serializeModelData, cfg });
 ```
 
-然后把 `SING_TOOL_FLAGS` 并进你文件里那个「工具名 → 开关」的映射表：
+> **顺序很重要**：必须放在包装**之后**。放在之前的话，这四个工具会绕过开关过滤
+> 和 `selfKeyGuard` 会话绑定闸门 —— 等于开了个后门，模型能把歌提交到别人的会话。
 
-```js
-const TOOL_FLAGS = { ...原有的, ...SING_TOOL_FLAGS };
+**验证工具真的注册上了**（不是看代码，是看真实进程）：
+
+```powershell
+node scripts/verify-mcp-tools.mjs C:\path\to\qq-bridge
 ```
 
-> 这一步不能漏。漏了的话，控制台显示「工具已关闭」，但模型每次请求仍然收到
-> 完整 schema 和描述，调用后再吃 403 —— 白烧 token，还诱导模型误调。
+它会 spawn 一个 MCP 进程、走 `initialize` → `tools/list`，然后告诉你四个工具在不在。
 
 ---
 
