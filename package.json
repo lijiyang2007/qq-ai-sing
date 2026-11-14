@@ -26,6 +26,15 @@
     "uvr",
     "snowluma"
   ],
+  "author": "lijiyang2007 (https://github.com/lijiyang2007)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lijiyang2007/qq-ai-sing.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lijiyang2007/qq-ai-sing/issues"
+  },
+  "homepage": "https://github.com/lijiyang2007/qq-ai-sing#readme",
   "dependencies": {}
 }

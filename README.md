@@ -213,7 +213,15 @@ node scripts/check-deps.mjs path/to/qq-bridge/src/bridge.js
 
 ---
 
+## 作者
+
+**[lijiyang2007](https://github.com/lijiyang2007)**
+
+完整名单见 [CONTRIBUTORS.md](CONTRIBUTORS.md)。
+
 ## 致谢
+
+第三方项目（各自遵循其许可证）：
 
 - [RVC](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI) — 换声引擎
 - [Ultimate Vocal Remover](https://github.com/Anjok07/ultimatevocalremovergui) — 分离框架
@@ -224,6 +232,8 @@ node scripts/check-deps.mjs path/to/qq-bridge/src/bridge.js
 ## 许可
 
 MIT。见 [LICENSE](LICENSE)。
+
+Copyright (c) 2026 [lijiyang2007](https://github.com/lijiyang2007)
 
 注意：MIT 只覆盖**本仓库的代码**。上面这些依赖和模型权重各有各的许可证，
 商用前请逐个确认。
