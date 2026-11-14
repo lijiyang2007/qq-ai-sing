@@ -271,10 +271,11 @@ node scripts/verify-mcp-tools.mjs C:\path\to\qq-bridge
   "socialV2": {
     "sing": {
       "enabled": true,
-      "root": "D:/qq-ai-sing-data",
-      "python": "C:/path/to/venv/Scripts/python.exe",
+      "root": "D:/sing-data",
+      "python": "C:/Python310/python.exe",
       "script": "C:/path/to/qq-ai-sing/pipeline/cover_job.py",
-      "jobsDir": "D:/qq-ai-sing-data/jobs",
+      "jobsDir": "D:/sing-data/jobs",
+      "runsDir": "D:/sing-data/runs",
       "maxPerHourPerSession": 3,
       "maxPerDayPerSession": 8,
       "maxPerHourGlobal": 6,
@@ -287,14 +288,29 @@ node scripts/verify-mcp-tools.mjs C:\path\to\qq-bridge
 }
 ```
 
+**先把这五个路径想清楚**（没有一个是能猜出来的，全部显式配）：
+
+| 字段 | 说明 | 常见错误 |
+|---|---|---|
+| `root` | **数据**根目录（任务/产物/缓存），不是代码目录 | 写成仓库目录，产物混进 git |
+| `python` | 跑流水线的解释器（要有 numpy/soundfile/scipy/av） | 写成 RVC/UVR 的运行时 |
+| `script` | 仓库里的 `pipeline/cover_job.py` 的**绝对路径** | 写成 `<root>/cover_job.py`（数据目录里没有这个文件） |
+| `jobsDir` | 任务 JSON 目录，桥接靠扫它做限频和去重 | 与 `root` 下的实际位置不一致 |
+| `runsDir` | 产物根目录，**必须与 Python 侧 `dataRoot` 一致** | 两边不一致 → 代唱取不到成品 |
+
+> `script` 和 `root` 指向**不同**的地方是正常的：代码在仓库里，数据在数据盘。
+> 这也是为什么 `cover_job.py` 里要用 `SING_DATA_ROOT` 环境变量把数据目录单独告诉它 ——
+> 桥接启动它时会自动带上。
+
+其它字段：
+
 | 字段 | 说明 |
 |---|---|
-| `root` | 数据根目录（任务/产物/缓存）。**别指向仓库目录**，会被 .gitignore 掉 |
-| `python` | 跑流水线的解释器（有 numpy/soundfile/scipy/av 的那个） |
-| `script` | 指向仓库里的 `pipeline/cover_job.py` |
-| `jobsDir` | 任务 JSON 目录，桥接靠扫它做限频和去重 |
 | `maxQueuedTotal` | 并发上限，**别超过 5**；8 GB 显存一次只能跑一个 |
 | `dailyUnlimitedTargets` | 豁免每日限额的会话，格式 `private:QQ号` / `group:群号` |
+
+> `root` 留空会直接报「点歌功能未配置」，不会静默用某个默认路径 ——
+> 写死默认值等于替你做决定，配错了还很难查。
 
 还要有 `ownerQQ`（代发/代唱要用）：
 

@@ -186,6 +186,78 @@ class WiringScriptTests(unittest.TestCase):
             self.assertIn("bak", src, f"{name} 没有备份机制")
 
 
+class NoMachinePathsTests(unittest.TestCase):
+    """仓库里不能出现任何开发机特有的绝对路径。
+
+    为什么单独一条：这类东西不会让测试失败，只会让别人的部署静默走错默认值
+    —— 具体踩到的就是 cover-job.js 里 `s.root ?? 'D:/AI-Song'`，
+    以及 relay-song-scope.js 里两处同样的默认值。
+    """
+
+    # 开发机/作者本机的特征串
+    FORBIDDEN = [
+        "C:\\Users\\",
+        "C:/Users/",
+        "Administrator\\Documents",
+        "dsh-runtimes",
+        "default-workspace",
+        "AI-Song",
+        "AI-UVR-2026",
+        "AI-RVC",
+    ]
+    ALLOWED_FILES = {
+        # 隐私文档里教人怎么扫这些串，必然出现
+        "PRIVACY.md",
+        # 本文件自己就写着这些特征串，否则没法做检查
+        "test_repo_health.py",
+    }
+
+    def _scan(self, path):
+        hits = []
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for needle in self.FORBIDDEN:
+                if needle in line:
+                    hits.append(f"{path.name}:{lineno}: {line.strip()[:110]}")
+                    break
+        return hits
+
+    def test_no_machine_specific_paths(self):
+        bad = []
+        for path in REPO.rglob("*"):
+            if not path.is_file():
+                continue
+            if ".git" in path.parts or "__pycache__" in path.parts:
+                continue
+            if path.suffix not in {".py", ".js", ".mjs", ".json", ".md"}:
+                continue
+            if path.name in self.ALLOWED_FILES:
+                continue
+            bad.extend(self._scan(path))
+        self.assertFalse(
+            bad,
+            "仓库里出现了开发机特有路径（别人部署会静默走错默认值）：\n  "
+            + "\n  ".join(bad[:20]),
+        )
+
+    def test_sing_root_has_no_default(self):
+        """cover-job.js 的 sing.root 不能有写死的默认值。"""
+        src = (REPO / "bridge" / "src" / "cover-job.js").read_text(encoding="utf-8")
+        self.assertNotRegex(
+            src,
+            r"s\.root\s*\?\?\s*'[A-Za-z]:",
+            "sing.root 又被写死了默认路径；应为空值，由配置决定",
+        )
+
+    def test_relay_scope_has_no_default_root(self):
+        src = (REPO / "bridge" / "src" / "relay-song-scope.js").read_text(encoding="utf-8")
+        self.assertNotRegex(
+            src,
+            r"\|\|\s*'[A-Za-z]:[\\\\/]",
+            "relay-song-scope.js 里又有写死的盘符路径",
+        )
+
+
 class PackageJsonTests(unittest.TestCase):
     def test_valid_json(self):
         data = json.loads((REPO / "package.json").read_text(encoding="utf-8-sig"))

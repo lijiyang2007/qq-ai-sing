@@ -108,6 +108,8 @@ VOICE_ID = str(_get("voiceId", "SING_VOICE_ID", "my-voice"))
 VOICE_LABEL = str(_get("voiceLabel", "SING_VOICE_LABEL", "自定义音色"))
 
 # ── RVC（换声引擎）──────────────────────────────────────────────────────────
+# 默认值只是**文档里教的标准安装位置**（见 INSTALL.md），不是任何人的本机路径。
+# 猜错了不会静默失败：rvc_stage.require_assets() 会明确列出缺失文件。
 RVC_HOME = _path(_get("rvcHome", "SING_RVC_HOME", r"D:\RVC"))
 RVC_MODEL_NAME = str(_get("rvcModel", "SING_RVC_MODEL", "model.pth"))
 RVC_INDEX_NAME = str(_get("rvcIndex", "SING_RVC_INDEX", "model.index"))
@@ -115,6 +117,7 @@ RVC_HUBERT = "assets/hubert/hubert_base.pt"
 RVC_RMVPE = "assets/rmvpe/rmvpe.pt"
 
 # ── UVR（人声分离）──────────────────────────────────────────────────────────
+# 同 RVC：默认值只是文档里的标准安装位置，猜错会在 uvr_stage.require_assets() 报错。
 UVR_HOME = _path(_get("uvrHome", "SING_UVR_HOME", r"C:\UVR"))
 UVR_WEIGHT_NAME = str(_get("uvrWeight", "SING_UVR_WEIGHT", "MelBandRoformer.ckpt"))
 UVR_CONFIG_NAME = str(_get(

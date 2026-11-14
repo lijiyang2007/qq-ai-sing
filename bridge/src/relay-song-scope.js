@@ -22,13 +22,13 @@ export function createRelaySongScope({getConfig,fetchAction,stateDir,now=Date.no
  // A cached worker can reach preflight before submit returns. Reconcile only the
  // exact signed grant already persisted by Python; this never launches/replays work.
  function reconcile(token,target){
-  const c=getConfig(),jobsDir=c.socialV2?.sing?.jobsDir||path.join(c.socialV2?.sing?.root||'D:\\AI-Song','jobs');
+  const {jobsDir}=singLayout();
   const found=[];for(const name of fs.readdirSync(jobsDir)){if(!/^[\w-]{4,64}\.json$/.test(name))continue;let j;try{j=JSON.parse(fs.readFileSync(path.join(jobsDir,name),'utf8'));}catch{continue;}
    if(j.relay_grant===token&&j.target===target&&j.no_send===false&&j.pipeline==='hq-lossless-uvr-rvc-v2-full-track'&&name===j.id+'.json')found.push(j.id);
   }
   if(found.length!==1)throw fail('无法唯一核实代唱任务授权');bind(token,target,found[0]);
  }
- async function authorize(token,target,{filePath=null,receipt=false}={}){const c=getConfig();if(c.socialV2?.sing?.enabled===false||c.socialV2?.tools?.sing===false||c.socialV2?.tools?.relaySend===false)throw fail('管理员代唱已关闭');const p=decode(token,target);if(!grants[p.nonce])reconcile(token,target);const g=grants[p.nonce];if(!g||g.target!==target)throw fail('代唱授权尚未绑定任务');if(!receipt){const root=getConfig().socialV2?.sing?.root||'D:\\AI-Song';const run=path.resolve(root,'hq_cover','runs',g.job);const candidate=path.resolve(String(filePath||''));if(!candidate.startsWith(run+path.sep))throw fail('代唱授权仅限该任务成品');const realRun=fs.realpathSync(run),realFile=fs.realpathSync(candidate);if(!realFile.startsWith(realRun+path.sep))throw fail('代唱成品路径越界');}
+ async function authorize(token,target,{filePath=null,receipt=false}={}){const c=getConfig();if(c.socialV2?.sing?.enabled===false||c.socialV2?.tools?.sing===false||c.socialV2?.tools?.relaySend===false)throw fail('管理员代唱已关闭');const p=decode(token,target);if(!grants[p.nonce])reconcile(token,target);const g=grants[p.nonce];if(!g||g.target!==target)throw fail('代唱授权尚未绑定任务');if(!receipt){const {runsDir}=singLayout();const run=path.resolve(runsDir,g.job);const candidate=path.resolve(String(filePath||''));if(!candidate.startsWith(run+path.sep))throw fail('代唱授权仅限该任务成品');const realRun=fs.realpathSync(run),realFile=fs.realpathSync(candidate);if(!realFile.startsWith(realRun+path.sep))throw fail('代唱成品路径越界');}
   await assertMember(target);return true;
  }
  return {list,assertMember,issue,bind,authorize};

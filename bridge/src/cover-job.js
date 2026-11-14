@@ -93,13 +93,16 @@ export function createCoverJobService({ getConfig, stateDir, log = () => {} }) {
   let submitting = false;
   function cfgOf() {
     const s = getConfig()?.socialV2?.sing ?? {};
-    const root = String(s.root ?? 'D:/AI-Song').replace(/[\\/]+$/, '') || 'D:/AI-Song';
+    // root 没有默认值：写死任何路径都等于替使用者做决定，配错了还很难查。
+    // 只做归一化（去尾部分隔符），为空就交给调用方报错。
+    const root = String(s.root ?? '').replace(/[\\/]+$/, '');
     return {
       enabled: s.enabled !== false,
       root,
-      python: String(s.python ?? '').trim() || path.join(root, 'runtime', 'venv-seedvc', 'Scripts', 'python.exe'),
-      script: String(s.script ?? '').trim() || path.join(root, 'cover_job.py'),
-      jobsDir: String(s.jobsDir ?? '').trim() || path.join(root, 'jobs'),
+      rootMissing: !root,
+      python: String(s.python ?? '').trim() || (root ? path.join(root, 'runtime', 'venv-seedvc', 'Scripts', 'python.exe') : ''),
+      script: String(s.script ?? '').trim() || (root ? path.join(root, 'cover_job.py') : ''),
+      jobsDir: String(s.jobsDir ?? '').trim() || (root ? path.join(root, 'jobs') : ''),
       maxPerHourPerSession: num(s.maxPerHourPerSession, 3, 0, 50),
       maxPerDayPerSession: num(s.maxPerDayPerSession, 8, 0, 200),
       dailyUnlimitedTargets: new Set((Array.isArray(s.dailyUnlimitedTargets) ? s.dailyUnlimitedTargets : [])
@@ -217,6 +220,13 @@ export function createCoverJobService({ getConfig, stateDir, log = () => {} }) {
     }
     const c = cfgOf();
     if (!c.enabled) throw httpError('点歌功能已关闭（socialV2.sing.enabled=false）', 403);
+    if (c.rootMissing) {
+      throw httpError(
+        '点歌功能未配置：config.json 的 socialV2.sing.root 为空。'
+        + '把它设成放 cover_job.py 的那个目录（例如 D:/sing-data），或同时配 python / script / jobsDir。',
+        503
+      );
+    }
 
     const wanted = cleanSong(song);
     if (!wanted) throw httpError('歌名不能为空：请给我一个具体歌名（可以带歌手）', 400);

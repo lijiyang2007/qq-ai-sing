@@ -48,7 +48,7 @@ def ensure_run_dir(path):
 
     为什么要这个：register() 要求 run 目录必须在 <dataRoot>/runs/ 下面，否则最后一步
     抛 CacheRejected: Path escapes its permitted root —— 那时 GPU 已经跑了三分钟。
-    典型触发场景是 README 里写的 `--out D:/test-1`（不在 runs/ 下）。
+    典型触发场景是用户把 --out 写成了任意目录（比如盘符根下的一个临时文件夹）。
 
     规则（按顺序，第一个命中就返回）：
       · 在 RUNS 下         → 原样用（但目录必须不存在，防止覆盖）
