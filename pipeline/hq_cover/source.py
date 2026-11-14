@@ -184,14 +184,13 @@ def _authorized_session():
 
 
 def _cookie_configured():
-    """是否已经放了自己的网易云 Cookie（没放就只能走公开接口，无损源会失败）。"""
-    import json as _json
-    import os as _os
-    helper = Path(LEGACY_HELPER)
-    cookie = _os.environ.get("SING_NETEASE_COOKIES") or str(
-        helper.parents[1] / "secrets" / "netease_cookies.json")
+    """是否已经放了自己的网易云 Cookie（没放就只能走公开接口，无损源会失败）。
+
+    路径统一由 config.NETEASE_COOKIE 决定，不在这里自己拼。
+    """
+    cookie = Path(config.NETEASE_COOKIE)
     try:
-        data = _json.loads(Path(cookie).read_text(encoding="utf-8"))
+        data = json.loads(cookie.read_text(encoding="utf-8-sig"))
         return isinstance(data, dict) and bool(data)
     except Exception:
         return False
@@ -555,11 +554,31 @@ def acquire_lossless(query: str, workdir: Path, track_id: int | None = None, all
                 payload = _official_get(session, "/api/search/get", {"s": query, "type": 1, "limit": 100, "offset": 0})
                 result = payload.get("result") or {}
                 candidates = result.get("songs") or []
-                # Truncated search cannot prove a unique version. Human must select ID.
+                # 搜索结果被截断（songCount > 返回条数）时，**不直接放弃**：
+                # 热门歌这个比例很高（《晴天》248 条、《起风了》300 条），直接 NeedsReview
+                # 等于命令行点歌几乎必须手带 --track-id。
+                #
+                # 但也不能从这 100 条里瞎挑一个 —— 那正是原设计要防的"选错版本"。
+                # 所以改走 resolve_auto_original()：它在**完整候选集**上按
+                # 「官方原版徽标优先，其次精确红心收藏数最高」选版，选不出来就仍然
+                # 抛 NeedsReview。既不放宽判定标准，也不让用户被搜索结果条数卡住。
                 if result.get("songCount", len(candidates)) > len(candidates):
-                    raise NeedsReview("Search results are incomplete; review an exact official track ID.")
-                track = select_candidate(query, candidates, allow_variant=allow_variant)
-                track_id = track["id"]
+                    from .song_resolver import resolve_auto_original
+                    resolved = resolve_auto_original(query)
+                    if not resolved.get("ok"):
+                        raise NeedsReview(
+                            "搜索结果不完整，且无法自动确定唯一原版；请用准确歌曲 ID 指定。",
+                            [{"id": resolved.get("track_id"), "title": resolved.get("title"),
+                              "artists": [{"name": a} for a in (resolved.get("artists") or [])],
+                              "album": {"name": resolved.get("album", "")}}]
+                            if resolved.get("track_id") else [],
+                        )
+                    # 只取 ID，后面统一走 /api/song/detail 重新取完整记录，
+                    # 避免两处 track 结构不一致（resolver 返回的是 _public() 投影）。
+                    track_id = int(resolved["track_id"])
+                else:
+                    track = select_candidate(query, candidates, allow_variant=allow_variant)
+                    track_id = track["id"]
             detail = _official_get(session, "/api/song/detail", {"id": track_id, "ids": json.dumps([track_id])})
             track = select_candidate(query, detail.get("songs") or [], track_id, allow_variant=allow_variant)
             matching_cache = next((item for item in caches if item[2] == track), None)

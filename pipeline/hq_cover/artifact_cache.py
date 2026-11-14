@@ -42,6 +42,40 @@ def _inside(path,root,exists=True):
     _require(p!=r and p.is_relative_to(r),'Path escapes its permitted root')
     return p
 
+
+def ensure_run_dir(path):
+    """把用户给的 --out 变成合法的 run 目录，并在**开工前**校验。
+
+    为什么要这个：register() 要求 run 目录必须在 <dataRoot>/runs/ 下面，否则最后一步
+    抛 CacheRejected: Path escapes its permitted root —— 那时 GPU 已经跑了三分钟。
+    典型触发场景是 README 里写的 `--out D:/test-1`（不在 runs/ 下）。
+
+    规则（按顺序，第一个命中就返回）：
+      · 在 RUNS 下         → 原样用（但目录必须不存在，防止覆盖）
+      · 在 RUNS 下但已存在 → 报错，不覆盖
+      · 不在 RUNS 下       → 抛 ValueError，并在信息里直接给出正确的写法
+    """
+    raw = Path(path).expanduser()
+    target = raw if raw.is_absolute() else (Path.cwd() / raw)
+    resolved = target.resolve()
+    # 运行时读模块级 RUNS（而不是闭包捕获），这样测试里 mock RUNS 能生效。
+    runs_root = RUNS.resolve()
+
+    if resolved != runs_root and resolved.is_relative_to(runs_root):
+        if resolved.exists():
+            raise ValueError(
+                f'输出目录已存在，拒绝覆盖：{resolved}\n'
+                '换一个新的目录名，例如在末尾加 -2。')
+        return resolved
+
+    # 不在 runs/ 下：给出可照抄的建议路径
+    suggested = runs_root / resolved.name
+    raise ValueError(
+        f'输出目录必须在 {runs_root} 下面，当前给的是：{resolved}\n'
+        f'改用：{suggested}\n'
+        '（artifact_cache 只接受 runs/ 下的目录，这是为了缓存与清理边界清晰。'
+        '你可以设 SING_DATA_ROOT 把 dataRoot 换到别处。）')
+
 def _read(path):
     _require(Path(path).stat().st_size<=16*1024*1024,'Metadata too large')
     value=json.loads(Path(path).read_text(encoding='utf-8'))

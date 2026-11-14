@@ -10,6 +10,7 @@ from .source import acquire_lossless
 from .mixing import mix_cover
 from .policy import PIPELINE,SINGING_BOUNDARY_POLICY,ORIGINAL_SOURCE_BYPASS
 from . import config
+from . import artifact_cache
 
 ROOT=Path(__file__).resolve().parent
 # 两个阶段的解释器来自 config.py（环境变量 SING_UVR_PY / SING_RVC_PY 或 config.local.json）
@@ -29,6 +30,15 @@ def _require_interpreters():
 def run_stage(python,script,args,workdir):
     env=dict(os.environ,PYTHONIOENCODING='utf-8',PYTHONUNBUFFERED='1',OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',RVC_F0_SMOOTH='1')
     env.pop('QQ_CONSOLE_TOKEN',None);env.pop('QQ_CONSOLE_PORT',None)
+    # 阶段脚本里有 `from hq_cover import config`，而它们是被当成**独立脚本**启动的
+    # （不是 -m），此时 sys.path[0] 是 hq_cover/ 自己，找不到 hq_cover 包本身。
+    # 不注入 PYTHONPATH 的话：uvr_stage / rvc_stage 一启动就
+    # ModuleNotFoundError: No module named 'hq_cover'。
+    # 异步路径下这个错误尤其隐蔽——任务停在 status=queued，只有 worker 日志里一行 traceback。
+    pkg_parent=str(ROOT.parent)
+    existing=env.get('PYTHONPATH','')
+    parts=[pkg_parent]+[p for p in existing.split(os.pathsep) if p]
+    env['PYTHONPATH']=os.pathsep.join(dict.fromkeys(parts))
     log=Path(workdir)/(Path(script).stem+'.log')
     from .processes import run_contained
     r=run_contained([str(python),str(script),*map(str,args)],ROOT.parent,env,log,6*3600)
@@ -71,7 +81,10 @@ def process(query,workdir,mode='full',track_id=None,stage_callback=None,allow_va
         video_url=normalize_video_url(video_url)
     elif re.search(r'(?i)(?:https?://|www\.|b23\.tv/|bilibili\.com/)',str(query)):
         raise ValueError('URLs require explicit video_url source selection')
-    workdir=Path(workdir);workdir.mkdir(parents=True,exist_ok=False)
+    # 在动手之前就校验 run 目录：否则 GPU 跑完三分钟才在 register() 抛出
+    # "Path escapes its permitted root"，白等一场。
+    workdir=artifact_cache.ensure_run_dir(workdir)
+    workdir.mkdir(parents=True,exist_ok=False)
     def stage(s):
         print(f'HQ_STAGE={s}',flush=True)
         if stage_callback:stage_callback(s)

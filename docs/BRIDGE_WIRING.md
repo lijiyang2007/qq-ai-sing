@@ -345,7 +345,7 @@ node bridge/src/selftest-mcp.mjs    # 期望：16 项通过 / 0 项失败
 
 ```powershell
 cd pipeline
-python -m hq_cover.jobs render --song "我怀念的 孙燕姿" --mode chorus --out D:/test-1
+python -m hq_cover.jobs render --song "我怀念的 孙燕姿" --mode chorus --out D:/sing-data/runs/test-1
 ```
 
 成功会打印 `COVER_PATH=...`。

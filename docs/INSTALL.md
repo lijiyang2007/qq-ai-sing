@@ -193,12 +193,14 @@ python scripts/doctor.py
 
 ```bash
 cd pipeline
-python -m hq_cover.jobs render --song "我怀念的 孙燕姿" --mode chorus --out D:/test-run-1
+python -m hq_cover.jobs render --song "我怀念的 孙燕姿" --mode chorus --out D:/sing-data/runs/test-1
 ```
 
 - `chorus` 是 36 秒短试听，用来验证链路，几分钟出结果
 - `full` 是整首，5～15 分钟
-- `--out` 必须是**不存在**的目录（防止覆盖）
+- `--out` 必须是**不存在**的目录，而且**必须在 `<dataRoot>/runs/` 下面**（防止覆盖、
+  也保证缓存与清理边界清晰）。给错位置会立刻报错并给出可照抄的正确路径，
+  不会等你跑完 GPU 才失败。
 
 成功的话最后会打印 `COVER_PATH=...`，那个 wav 就是成品。
 

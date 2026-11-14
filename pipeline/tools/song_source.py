@@ -23,8 +23,33 @@ import requests
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-COOKIE_FILE = os.environ.get("SING_NETEASE_COOKIES") or str(
-    Path(__file__).resolve().parents[1] / "secrets" / "netease_cookies.json")
+
+def _resolve_cookie_file():
+    """Cookie 路径**只从 hq_cover.config 拿**。
+
+    以前这里自己拼 `<pipeline>/secrets/`，而 doctor.py 查的是 `<dataRoot>/secrets/`，
+    于是出现「doctor 显示 OK、实际跑起来还是 128k」这种自相矛盾的状态。
+    现在两边都问 config，只有一处真相。
+    """
+    env = os.environ.get("SING_NETEASE_COOKIES")
+    if env:
+        return Path(env).expanduser()
+    try:
+        # tools/ 的上一级就是 pipeline/，hq_cover 是它的子包
+        candidates = [Path(__file__).resolve().parents[1], *Path(__file__).resolve().parents[2:4]]
+        for base in candidates:
+            if (base / "hq_cover" / "__init__.py").is_file():
+                if str(base) not in sys.path:
+                    sys.path.insert(0, str(base))
+                break
+        from hq_cover import config as hq_config
+        return Path(hq_config.NETEASE_COOKIE)
+    except Exception:
+        # 极端情况下（包没装好）退回本地约定，至少不会崩
+        return Path(__file__).resolve().parents[1] / "secrets" / "netease_cookies.json"
+
+
+COOKIE_FILE = str(_resolve_cookie_file())
 
 # 标题黑名单：这些不是我们要的"原唱完整歌曲"
 BAD_WORDS = [

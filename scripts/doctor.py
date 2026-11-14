@@ -93,18 +93,21 @@ def main() -> int:
             check(OK if Path(p).is_file() else BAD, label,
                   str(p) if Path(p).is_file() else "缺失 %s（见 docs/INSTALL.md）" % p)
 
-    # 网易云 Cookie
-    cookie = Path(config.DATA_ROOT) / "secrets" / "netease_cookies.json"
+    # 网易云 Cookie（路径来自 config.NETEASE_COOKIE，和运行期完全同一处真相）
+    cookie = Path(config.NETEASE_COOKIE)
     if cookie.is_file():
         try:
-            data = json.loads(cookie.read_text(encoding="utf-8"))
+            data = json.loads(cookie.read_text(encoding="utf-8-sig"))
             check(OK if data else WARN, "网易云 Cookie",
-                  "%d 个字段" % len(data) if data else "文件是空的")
+                  "%s（%d 个字段）" % (cookie, len(data)) if data else "%s 是空的" % cookie)
         except Exception as exc:
-            check(BAD, "网易云 Cookie", "解析失败：%s" % exc)
+            check(BAD, "网易云 Cookie", "%s 解析失败：%s" % (cookie, exc))
     else:
+        tried = config.netease_cookie_candidates()
         check(WARN, "网易云 Cookie",
-              "没有 %s —— 只能取到 128k 试听，无损流程会暂停" % cookie)
+              "没有找到。已尝试：\n" +
+              "\n".join("      · %s" % p for p in tried) +
+              "\n      放一个到第一个位置即可；只能取到 128k 试听，无损流程会暂停")
 
     # 模型指纹
     lock = Path(config.ROOT) / "models.lock.json"

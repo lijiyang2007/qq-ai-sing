@@ -3,7 +3,7 @@ import contextlib,hashlib,hmac,io,json,os,sys,tempfile,unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
-from hq_cover import source,jobs,pipeline
+from hq_cover import source,jobs,pipeline,artifact_cache
 from hq_cover.tests.test_source import FixtureCase,make_track
 
 class IdentityTests(unittest.TestCase):
@@ -80,7 +80,8 @@ class JobTests(unittest.TestCase):
  def test_pipeline_source_flag_only_true(self):
   for flag in [False,True]:
    with tempfile.TemporaryDirectory() as tmp,mock.patch.object(pipeline,'acquire_lossless',side_effect=RuntimeError('stop before audio')) as acquire:
-    with self.assertRaisesRegex(RuntimeError,'stop before audio'):pipeline.process('Song Artist',Path(tmp)/'run',track_id=123,allow_variant=flag)
+    with mock.patch.object(artifact_cache,'RUNS',Path(tmp)):
+                with self.assertRaisesRegex(RuntimeError,'stop before audio'):pipeline.process('Song Artist',Path(tmp)/'run',track_id=123,allow_variant=flag)
     self.assertEqual(acquire.call_args.kwargs,{'track_id':123,**({'allow_variant':True} if flag else {})})
 
 if __name__=='__main__':unittest.main()

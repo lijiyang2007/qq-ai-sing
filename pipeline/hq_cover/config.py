@@ -189,6 +189,49 @@ def expected_hash(path):
     return None
 
 
+# ── 网易云 Cookie ───────────────────────────────────────────────────────────
+# 这是**唯一**的解析入口：doctor.py、source.py、tools/song_source.py 都必须问这里，
+# 否则就会出现「doctor 说 OK、实际跑起来还是 128k」——两个地方各查各的路径。
+#
+# 按顺序找，第一个存在的就用：
+#   1. 环境变量 SING_NETEASE_COOKIES 指定的文件
+#   2. config.local.json 的 cookieFile
+#   3. <pipeline>/secrets/netease_cookies.json      ← 仓库内（最常用）
+#   4. <dataRoot>/secrets/netease_cookies.json      ← 数据目录隔离部署时
+COOKIE_FILENAME = "netease_cookies.json"
+
+
+def netease_cookie_candidates():
+    """返回所有候选路径（按优先级），不判断存在性。"""
+    out = []
+    env = os.environ.get("SING_NETEASE_COOKIES")
+    if env:
+        out.append(Path(env).expanduser())
+    configured = _LOCAL.get("cookieFile")
+    if configured:
+        out.append(Path(str(configured)).expanduser())
+    out.append(ROOT / "secrets" / COOKIE_FILENAME)
+    data_secret = Path(DATA_ROOT) / "secrets" / COOKIE_FILENAME
+    if data_secret not in out:
+        out.append(data_secret)
+    return out
+
+
+def netease_cookie_path():
+    """返回实际要用的 Cookie 路径：存在的话给存在的那个，否则给默认位置。
+
+    返回值永远非 None，方便调用方直接拿来报错（"没有 xxx"）。
+    """
+    candidates = netease_cookie_candidates()
+    for path in candidates:
+        if path.is_file():
+            return path
+    return candidates[0]
+
+
+NETEASE_COOKIE = netease_cookie_path()
+
+
 def as_dict():
     """打印诊断用；不含任何凭据。"""
     return {
@@ -204,5 +247,7 @@ def as_dict():
         "mainPy": str(MAIN_PY),
         "modelsLock": _LOCK_FILE if _MODEL_LOCK else None,
         "localConfig": str(_LOCAL_FILE) if _LOCAL else None,
+        "neteaseCookie": str(NETEASE_COOKIE),
+        "neteaseCookieFound": NETEASE_COOKIE.is_file(),
         "problems": list(problems),
     }

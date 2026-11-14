@@ -57,7 +57,7 @@ cd qq-ai-sing
 4. **跑一次**（不发 QQ）：
    ```bash
    cd pipeline
-   python -m hq_cover.jobs render --song "我怀念的 孙燕姿" --mode chorus --out D:/test-1
+   python -m hq_cover.jobs render --song "我怀念的 孙燕姿" --mode chorus --out D:/sing-data/runs/test-1
    ```
 5. **接 QQ** → 一条命令：
    ```bash

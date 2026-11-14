@@ -2,7 +2,7 @@
 import json,tempfile,unittest
 from pathlib import Path
 from unittest import mock
-from hq_cover import pipeline,jobs,config
+from hq_cover import pipeline,jobs,config,artifact_cache
 
 class TestArtifactPipeline(unittest.TestCase):
  def test_hit_skips_all_gpu_and_mixing(self):
@@ -11,7 +11,7 @@ class TestArtifactPipeline(unittest.TestCase):
    source={'source_path':'source.flac','source_sha256':'a'*64}
    result={'cache_hit':True,'mode':'full','cover':'new-cover','vocal':'new-vocal','singing_boundary_policy':'disabled_full_track_conversion','pipeline':jobs.PIPELINE,'quality':{'quality_passed':True,'pipeline':jobs.PIPELINE,'singing_boundary_policy':'disabled_full_track_conversion','original_source_bypass':False}}
    stages=[]
-   with mock.patch.object(pipeline,'acquire_lossless',return_value=source),mock.patch.object(pipeline,'require_audio_hash'),mock.patch('hq_cover.artifact_cache.lookup',return_value=result) as lookup,mock.patch('hq_cover.artifact_cache.register') as register,mock.patch.object(pipeline,'run_stage') as gpu,mock.patch.object(pipeline,'mix_cover') as mix:
+   with mock.patch.object(pipeline,'acquire_lossless',return_value=source),mock.patch.object(pipeline,'require_audio_hash'),mock.patch.object(artifact_cache,'RUNS',Path(tmp)),mock.patch('hq_cover.artifact_cache.lookup',return_value=result) as lookup,mock.patch('hq_cover.artifact_cache.register') as register,mock.patch.object(pipeline,'run_stage') as gpu,mock.patch.object(pipeline,'mix_cover') as mix:
     actual=pipeline.process('song artist',out,stage_callback=stages.append)
     self.assertTrue(actual['cache_hit']);gpu.assert_not_called();mix.assert_not_called();register.assert_not_called();lookup.assert_called_once_with(source,'full',out)
     self.assertIn('cached_cover_ready',stages);self.assertTrue(json.loads((out/'result.json').read_text())['cache_hit'])

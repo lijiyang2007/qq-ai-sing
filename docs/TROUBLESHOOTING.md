@@ -6,6 +6,75 @@
 
 ## 安装阶段
 
+### `ModuleNotFoundError: No module named 'hq_cover'`
+
+**症状**：直接跑 `python hq_cover/uvr_stage.py --help` 或者让流水线跑起来时，
+报这个错。异步路径下更隐蔽：任务永远停在 `status=queued`，worker 日志里只有一行 traceback。
+
+**原因**：stage 脚本里有 `from hq_cover import config`，但它们是**被当成独立脚本**启动的
+（`python uvr_stage.py`，不是 `-m hq_cover.uvr_stage`），此时 `sys.path[0]` 是
+`hq_cover/` 自己，找不到 `hq_cover` 这个包。
+
+**已修复**（两个层面都补了）：
+- `uvr_stage.py` / `rvc_stage.py` 自己把 `pipeline/` 插进 `sys.path`，独立跑也能用
+- `pipeline.run_stage()` 给子进程注入 `PYTHONPATH`
+
+如果你用的是更早的版本，手动设置：
+
+```powershell
+$env:PYTHONPATH = "<repo>\pipeline"
+```
+
+### `输出目录必须在 ...\runs 下面`
+
+**症状**：GPU 跑了三分钟，最后一步才抛 `CacheRejected: Path escapes its permitted root`。
+
+**原因**：`artifact_cache.register()` 要求 run 目录在 `<dataRoot>/runs/` 下。
+典型触发：照着旧文档写 `--out D:/test-1`。
+
+**已修复**：`pipeline.process()` 现在**在启动 GPU 之前**就用 `ensure_run_dir()` 校验，
+报错时直接给出可照抄的正确路径：
+
+```
+输出目录必须在 ...\pipeline\runs 下面，当前给的是：D:\test-1
+改用：...\pipeline\runs\test-1
+```
+
+### `doctor` 说 Cookie OK，实际还是只能拿 128k
+
+**原因**：`doctor.py` 和 `source.py` 各查各的路径 —— doctor 查 `<dataRoot>/secrets/`，
+实际读 `<pipeline>/secrets/`。两边不一致时就会「显示 OK、跑起来失败」。
+
+**已修复**：Cookie 路径现在**只有一处真相** —— `hq_cover/config.py` 的
+`config.NETEASE_COOKIE`，doctor / source / tools 全都问它。查找顺序：
+
+```
+1. 环境变量 SING_NETEASE_COOKIES 指定的文件
+2. config.local.json 的 cookieFile
+3. <pipeline>/secrets/netease_cookies.json      ← 最常用
+4. <dataRoot>/secrets/netease_cookies.json      ← 数据目录隔离部署时
+```
+
+`doctor.py` 找不到时会把这四个候选路径全列出来。
+
+**怎么确认放对了**：放对之后网易云接口返回 `code=200 level=lossless`，
+放错/没放会返回 `code=-110`。
+
+### `NeedsReview: Search results are incomplete`
+
+**症状**：点热门歌（《晴天》《起风了》这类）卡在这里，必须手带 `--track-id`。
+
+**原因**：`source.py` 原来有个硬闸门 —— 搜索 `songCount > 返回条数(100)` 就停，
+因为"被截断的搜索结果无法证明版本唯一"。这是**防误选**的刻意设计，但代价是
+命令行点歌几乎必须查 ID。
+
+**已修复**：截断时不再直接放弃，而是转给 `resolve_auto_original()` ——
+它在**完整候选集**上按「官方原版徽标优先，其次精确红心收藏数最高」选版。
+判定标准没放宽：选不出来仍然抛 `NeedsReview`。
+
+> **QQ 那条路本来就不受影响**：`cover-job.js` 先跑 `song_resolver --auto-original-query`
+> 挑出准确 `track_id` 再提交，实测能正确解析。
+
 ### `ModuleNotFoundError: No module named 'faiss'`
 
 **原因**：跑错解释器了。faiss 只装在 RVC 的环境里，主流水线环境没有也不需要。

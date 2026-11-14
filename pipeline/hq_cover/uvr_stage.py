@@ -33,6 +33,14 @@ import sys
 import time
 import traceback
 
+# 这个文件会被当成**独立脚本**启动（python uvr_stage.py ...），此时 sys.path[0] 是
+# hq_cover/ 本身，`from hq_cover import config` 会 ModuleNotFoundError。
+# 所以自己把 pipeline/ 塞进 sys.path —— 这样无论谁启动、有没有设 PYTHONPATH 都能跑。
+# （--help 也走这条路，保持"help 不该因为环境没配好就报错"的性质）
+_HERE = Path(__file__).resolve().parent
+if str(_HERE.parent) not in sys.path:
+    sys.path.insert(0, str(_HERE.parent))
+
 from hq_cover import config
 ROOT = config.UVR_HOME
 APP = (ROOT / "UVR-beta") if ROOT else None
