@@ -1,0 +1,21 @@
+# ── 你本机的私有配置：复制成 config.local.json 再改 ──────────────────────────
+# config.local.json 已在 .gitignore 里，不会被提交。这里只是模板。
+{
+  "_说明": "改完保存成 config.local.json，放在 pipeline/ 目录下。",
+
+  "dataRoot": "D:/qq-ai-sing-data",
+
+  "voiceId": "my-voice",
+  "voiceLabel": "我自己训的音色",
+
+  "rvcHome": "D:/RVC",
+  "rvcModel": "myvoice48k_e90.pth",
+  "rvcIndex": "myvoice48k/added_IVF2230_Flat_nprobe_1_myvoice48k_v2.index",
+
+  "uvrHome": "C:/UVR",
+  "uvrWeight": "MelBandRoformer.ckpt",
+  "uvrConfig": "config_vocals_mel_band_roformer_kim.yaml",
+
+  "rvcPy": "D:/RVC/runtime/python.exe",
+  "uvrPy": "C:/UVR/venv/Scripts/python.exe"
+}

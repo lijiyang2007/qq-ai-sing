@@ -1,0 +1,44 @@
+# 凭据与私有配置 —— 绝不提交
+config.local.json
+pipeline/config.local.json
+pipeline/secrets/
+secrets/
+**/netease_cookies.json
+models.lock.json
+
+# 你训练出来的音色（本仓库不提供，也不该出现在公开仓库）
+*.pth
+*.index
+*.ckpt
+*.onnx
+
+# 运行产物
+jobs/
+runs/
+artifact_cache/
+sources_lossless/
+audio/
+*.wav
+*.flac
+*.mp3
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ����ʱ���ļ�
+*.lock

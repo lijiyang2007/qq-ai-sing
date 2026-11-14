@@ -1,0 +1,26 @@
+{
+  "name": "qq-ai-sing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Make a QQ chat agent actually sing: lossless source -> UVR separation -> RVC voice conversion -> mix QA -> QQ delivery. Ships no voice models.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "doctor": "python scripts/doctor.py",
+    "hash-models": "python scripts/hash-models.py",
+    "test": "python -B -m unittest discover -s pipeline/hq_cover/tests -t pipeline -p \"test_*.py\"",
+    "render:chorus": "python -m hq_cover.jobs render --song \"我怀念的 孙燕姿\" --mode chorus --out ../test-run"
+  },
+  "keywords": [
+    "qq",
+    "rvc",
+    "voice-conversion",
+    "ai-cover",
+    "uvr",
+    "snowluma"
+  ],
+  "license": "MIT",
+  "dependencies": {}
+}
