@@ -1,7 +1,5 @@
-# ── 你本机的私有配置：复制成 config.local.json 再改 ──────────────────────────
-# config.local.json 已在 .gitignore 里，不会被提交。这里只是模板。
 {
-  "_说明": "改完保存成 config.local.json，放在 pipeline/ 目录下。",
+  "_说明": "复制成 pipeline/config.local.json 再改。config.local.json 已在 .gitignore 里，不会被提交。这个文件本身必须是合法 JSON（不能写 // 或 # 注释），否则 hq_cover/config.py 会静默忽略整个文件、回落到默认值。",
 
   "dataRoot": "D:/qq-ai-sing-data",
 

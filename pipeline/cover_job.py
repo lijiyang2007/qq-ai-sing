@@ -26,7 +26,29 @@ import time
 import uuid
 from pathlib import Path
 
-ROOT = Path(os.environ.get("SING_DATA_ROOT") or Path(__file__).resolve().parent)
+# ---------------------------------------------------------------- 代码位置
+# 这个脚本有两种被调用的方式，都要能找到 hq_cover：
+#   ① 留在仓库里直接跑（python <repo>/pipeline/cover_job.py ...）—— hq_cover 就在旁边；
+#   ② 按 BRIDGE_WIRING.md 复制到 dataRoot（桥接 spawn 它）—— hq_cover 可能在旁边，
+#      也可能不在（只复制了一个文件）。所以两种情况都探一遍，都没有就明确报错。
+_SELF_DIR = Path(__file__).resolve().parent
+for _cand in (_SELF_DIR, _SELF_DIR / "pipeline", _SELF_DIR.parent / "pipeline"):
+    if (_cand / "hq_cover" / "__init__.py").is_file():
+        if str(_cand) not in sys.path:
+            sys.path.insert(0, str(_cand))
+        break
+else:
+    raise SystemExit(
+        "找不到 hq_cover 包。这个脚本必须和 pipeline/hq_cover/ 在一起：\n"
+        "  · 要么留在仓库里跑：python <仓库>/pipeline/cover_job.py ...\n"
+        "  · 要么把整个 pipeline/ 目录（不只这一个文件）放到 sing.root，"
+        "再用 SING_DATA_ROOT 指定数据目录\n"
+        "详见 docs/BRIDGE_WIRING.md。"
+    )
+del _cand
+
+# 数据目录（任务 JSON / 产物 / 缓存）。代码目录和它分开，方便只更新代码不丢任务。
+ROOT = Path(os.environ.get("SING_DATA_ROOT") or _SELF_DIR)
 JOBS = ROOT / "jobs"
 VENV_PY = Path(sys.executable)
 AUDIO_DIR = Path(os.environ.get("SING_AUDIO_DIR") or (ROOT / "audio"))
