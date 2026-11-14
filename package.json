@@ -11,7 +11,10 @@
     "doctor": "python scripts/doctor.py",
     "hash-models": "python scripts/hash-models.py",
     "test": "python -B -m unittest discover -s pipeline/hq_cover/tests -t pipeline -p \"test_*.py\"",
-    "render:chorus": "python -m hq_cover.jobs render --song \"我怀念的 孙燕姿\" --mode chorus --out ../test-run"
+    "test:bridge": "node bridge/src/selftest.mjs && node bridge/src/selftest-mcp.mjs",
+    "test:all": "npm run test && npm run test:bridge",
+    "check-deps": "node scripts/check-deps.mjs",
+    "render:chorus": "cd pipeline && python -m hq_cover.jobs render --song \"示例歌曲 示例歌手\" --mode chorus --out ../test-run"
   },
   "keywords": [
     "qq",

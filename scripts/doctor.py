@@ -36,6 +36,16 @@ def main() -> int:
         print("  %-10s %s" % (key, info.get(key)))
     print()
 
+    # 配置文件本身
+    local_cfg = info.get("localConfig")
+    if local_cfg:
+        check(OK, "config.local.json", "已加载：%s" % local_cfg)
+    else:
+        check(WARN, "config.local.json",
+              "没有（全部走默认值/环境变量）。要自定义就 cp config.example.json config.local.json")
+    for problem in info.get("problems") or []:
+        check(WARN, "配置问题", problem)
+
     # Python
     check(OK, "Python", sys.version.split()[0])
     try:
@@ -100,6 +110,20 @@ def main() -> int:
     lock = Path(config.ROOT) / "models.lock.json"
     check(OK if lock.is_file() else WARN, "models.lock.json",
           "已生成" if lock.is_file() else "未生成，跑 python scripts/hash-models.py")
+
+    # 桥接接线模块（只有要用 QQ 时才需要）
+    bridge_src = Path(config.ROOT).parents[0] / "bridge" / "src"
+    if not bridge_src.is_dir():
+        bridge_src = Path(__file__).resolve().parents[1] / "bridge" / "src"
+    if bridge_src.is_dir():
+        required = ["cover-job.js", "sing-wiring.js", "sing-endpoints.js",
+                    "relay-endpoints.js", "mcp-sing-tools.js",
+                    "selftest.mjs", "selftest-mcp.mjs"]
+        missing = [n for n in required if not (bridge_src / n).is_file()]
+        check(OK if not missing else WARN, "桥接模块",
+              "齐全（%d 个）" % len(required) if not missing else "缺 %s" % ", ".join(missing))
+    else:
+        check(WARN, "桥接模块", "找不到 bridge/src（只有要接 QQ 时才需要）")
 
     # 交付通道
     if shutil.which("node"):

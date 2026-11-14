@@ -83,24 +83,42 @@ Copy-Item "$Repo\bridge\src\*.mjs"  "$Bridge\src\" -Force
 
 ## 三、改桥接代码（4 步）
 
+> **先试自动接线**，它会按括号配对找位置、改完自动 `node --check`：
+>
+> ```powershell
+> node scripts/wire-bridge.mjs C:\path\to\qq-bridge --dry-run   # 先看会改什么
+> node scripts/wire-bridge.mjs C:\path\to\qq-bridge             # 真改（自动备份）
+> ```
+>
+> 它会做 3.1 + 3.2 + 3.3。**3.4（MCP 工具注册）还得手工做**，因为每个版本的
+> `mcp-snowluma-safe.js` 结构差异太大。
+>
+> 失败或想自己改，看下面的手工步骤。
+
 > `bridge.js` 每个版本都不一样，所以这里不给整份文件，也不给行号。
 > 找**锚点**（下面每步都写了），插在锚点旁边。
+>
+> ⚠️ **位置很关键**：3.2 和 3.3 必须放在 `http.createServer(async (req, res) => { ... })`
+> 的**回调内部**，而且要在 `sendJson` / `readBody` 定义**之后**。
+> 这几个 deps 是回调作用域的闭包，放到外层（比如 `v2SessionAllowed` 那一层）会
+> 直接 `ReferenceError: sendJson is not defined`，启动就挂。
 
 ### 3.1 `src/bridge.js` — 引入装配器
 
-在文件顶部的 import 区：
+在文件顶部的 import 区（找 `const __dirname = ...` 那行，插在它前面）：
 
 ```js
 import { createSingWiring } from './sing-wiring.js';
 ```
 
-### 3.2 `src/bridge.js` — 装配
+### 3.2 + 3.3 `src/bridge.js` — 装配并挂路由
 
-在 `startConsoleServer()` **里面**，找到 `const v2SessionAllowed = ...` 那一行，
-在它后面插入：
+找到 `http.createServer(async (req, res) => {`，进到回调内部，再找
+`const readBody = () => new Promise(...)`。**在这个 `readBody` 定义结束之后**插入整块：
 
 ```js
 // ── 点歌 / 代唱接线 ──────────────────────────────────────────────────
+// 必须放在 createServer 回调内部、sendJson/readBody 之后。
 const sing = createSingWiring({
   // 现成的（这些名字 bridge.js 里本来就有，直接给）
   getConfig: () => cfg,
@@ -112,15 +130,40 @@ const sing = createSingWiring({
   sendToQQ, lastSendSucceeded, recordSentMessagesV2, verifyVoiceMessageSent,
   sendMessagesV2, sendStickerV2, computeGapsV2, findMessageMedia, resolveReplyTargetV2,
   getSocialV2State, saveSocialV2State, scheduleReplyCheckV2,
-  sendImageBufferToKey, imageSendRoots, isInsideAllowedImageDir, imageSendMaxPerHour,
   safeFetchBuffer, MAX_MEDIA_BYTES, SENSITIVE_RE, KNOWN_AGENT_TOKENS,
 
   // 需要包一层的（bridge.js 里叫别的名字）
   getCurrentMode: () => currentMode,
   isPaused: () => socialV2.paused === true,
   fetchAction: onebotHttpAction,
+
+  // 可选：只有「管理员代发本地图片」才需要。
+  // 上游没有这四个时，imagePath 会返回 501；文字/表情/转发图片/代唱都照常。
+  // 你的 bridge.js 里有就带上，没有就整行删掉。
+  ...(typeof imageSendRoots !== 'undefined' ? {
+    sendImageBufferToKey, imageSendRoots, isInsideAllowedImageDir, imageSendMaxPerHour,
+  } : {}),
 });
+
+// 挂路由：拦下 4 条 /api/socialV2/* 路径，其余原样放行
+if (await sing.handle(req, res, url)) return;
+// ────────────────────────────────────────────────────────────────────
 ```
+
+> `coverJobs` / `relaySongScope` / `submitTrackedSong` 这三个**不用传**——
+> `createSingWiring` 内部自己创建并导出，漏了反而会重复实例化。
+
+它会拦下这四条路径：
+
+```
+POST /api/socialV2/sing
+POST /api/socialV2/sing-status
+GET  /api/socialV2/relay-targets
+POST /api/socialV2/relay-send
+```
+
+> `url` 是回调里 `try { url = new URL(...) }` 解析出来的那个变量，所以插入位置
+> 必须在那之后。上面选的 `readBody` 之后天然满足。
 
 跑一次这个，看有没有报错：
 
@@ -130,28 +173,15 @@ node "$Bridge\scripts\check-deps.mjs" "$Bridge\src\bridge.js"
 
 它会告诉你缺哪一项、哪些只是名字不同。**0 项真正缺失**才继续。
 
-### 3.3 `src/bridge.js` — 挂路由
+### 3.3b 关闭时清理（可选）
 
-在 `http.createServer(...)` 的回调里，**最前面**（其它 `/api/socialV2/*` 判断之前）加一行：
-
-```js
-if (await sing.handle(req, res, url)) return;
-```
-
-它会拦下这四条路径，其它路径原样放行：
-
-```
-POST /api/socialV2/sing
-POST /api/socialV2/sing-status
-GET  /api/socialV2/relay-targets
-POST /api/socialV2/relay-send
-```
-
-在 `server.on('close', ...)` 里加：
+如果你的 bridge.js 里有 `server.on('close', ...)`，加一行：
 
 ```js
-sing.close();   // 清掉两个 setInterval
+sing.close();   // 清掉两个 setInterval，避免测试里进程不退
 ```
+
+上游某些版本没有这个钩子，跳过即可——进程退出时定时器自然会没。
 
 ### 3.4 `src/mcp-snowluma-safe.js` — 注册工具
 

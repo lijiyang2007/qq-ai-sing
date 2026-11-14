@@ -86,17 +86,62 @@ qq-ai-sing/
 │       ├── jobs.py              #    任务调度 / GPU 锁 / 进程约束
 │       ├── processes.py         #    Windows Job Object 进程树约束
 │       ├── queueing.py          #    FIFO 队列
-│       └── tests/               # 280 个测试，全部可离线跑
-├── bridge/src/                  # 桥接侧的 7 个点歌模块（要接到 qq-bridge）
+│       └── tests/               # 23 个测试文件，全部可离线跑
+├── bridge/src/                  # 桥接侧：核心模块 + 接线装配器 + 自检
+│   ├── cover-job.js             #   任务提交/状态（核心）
+│   ├── song-intent.js           #   从聊天判断「这是点歌」
+│   ├── pro-song.js              #   pro 点歌（跳版本限制）
+│   ├── bilibili-song.js         #   B 站链接点歌
+│   ├── relay-song-scope.js      #   代唱授权范围
+│   ├── song-job-notifier.js     #   跑完主动通知
+│   ├── voice-delivery-receipts.js  # 发送回执 / 防重发
+│   ├── sing-wiring.js           # ★ 一次性装配上面全部 + 路由
+│   ├── sing-endpoints.js        #   /api/socialV2/sing(+status)
+│   ├── relay-endpoints.js       #   /api/socialV2/relay-*
+│   ├── mcp-sing-tools.js        # ★ qq_sing / qq_sing_status 等 4 个 MCP 工具
+│   ├── selftest.mjs             #   29 项接线自检（不需要 QQ / 显卡）
+│   └── selftest-mcp.mjs         #   16 项工具注册自检
 ├── scripts/
 │   ├── doctor.py                # 环境自检
-│   └── hash-models.py           # 生成模型指纹
+│   ├── hash-models.py           # 生成模型指纹
+│   └── check-deps.mjs           # 对照真实 bridge.js 检查 deps 是否齐全
 └── docs/
     ├── INSTALL.md               # 安装
     ├── TRAIN_VOICE.md           # 训练你自己的音色
     ├── BRIDGE_WIRING.md         # 接进 QQ 桥接
     ├── TROUBLESHOOTING.md       # 排错
     └── PRIVACY.md               # 隐私边界（哪些东西永远不该提交）
+```
+
+---
+
+## 装完怎么确认是对的
+
+三条命令，按顺序跑。**全绿才说明这套东西在你机器上真的能用**：
+
+```bash
+# 1. 环境自检：解释器、模型、Cookie、node
+python scripts/doctor.py
+
+# 2. 流水线单元测试（不需要 GPU，不需要 QQ）
+cd pipeline
+python -B -m unittest discover -s hq_cover/tests -t . -p "test_*.py"
+
+# 3. 桥接接线自检（不需要 QQ 在线，不需要显卡）
+cd ..
+node bridge/src/selftest.mjs        # 期望：29 项通过 / 0 项失败
+node bridge/src/selftest-mcp.mjs    # 期望：16 项通过 / 0 项失败
+```
+
+第 3 步是最容易被跳过、也最不该跳过的：它验证 `qq_sing` 这类工具到底注册上没有、
+权限闸门对不对、请求有没有打到正确的路由。**不跑它就去群里点歌，失败时你分不清是
+流水线的问题还是接线的问题。**
+
+接了真实 bridge.js 之后，还可以再确认一次 deps 有没有对错：
+
+```bash
+node scripts/check-deps.mjs path/to/qq-bridge/src/bridge.js
+# 期望：真正缺失（会阻止启动）：0 项
 ```
 
 ---

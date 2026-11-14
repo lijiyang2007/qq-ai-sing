@@ -3,7 +3,10 @@ import contextlib,copy,hashlib,hmac,io,json,os,sys,tempfile,types,unittest
 from pathlib import Path
 from unittest import mock
 from hq_cover import jobs,pipeline,artifact_cache as cache,config
-from hq_cover.tests.test_artifact_cache import CacheTests
+# 注意：这里必须 import 模块而不是 `from ... import CacheTests`。
+# unittest 的 discover 会扫描模块命名空间里所有 TestCase 子类，直接 import 类会让
+# CacheTests 的 14 个用例被重复收集一遍（同一个 id 跑两次）。
+from hq_cover.tests import test_artifact_cache as _cache
 
 URL='https://www.bilibili.com/video/BV1xx411c7mD?p=2'
 
@@ -79,7 +82,7 @@ class VideoPipelineTests(unittest.TestCase):
    with self.assertRaises(ValueError):pipeline.process(URL,Path(t)/'run')
    n.assert_not_called()
 
-class VideoCacheTests(CacheTests):
+class VideoCacheTests(_cache.CacheTests):
  # Reuse established realistic stage/PCM fixture, override only video provenance.
  def setUp(self):
   super().setUp();self.original_source=copy.deepcopy(self.result['source'])

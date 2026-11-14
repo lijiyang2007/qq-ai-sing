@@ -23,12 +23,63 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 _LOCAL_FILE = ROOT / "config.local.json"
-try:
-    _LOCAL = json.loads(_LOCAL_FILE.read_text(encoding="utf-8"))
-    if not isinstance(_LOCAL, dict):
-        _LOCAL = {}
-except Exception:
-    _LOCAL = {}
+
+# 配置解析问题会记在这里，doctor.py 会单独列一项。
+# 语法错误是致命的（直接 SystemExit）；其余问题只警告。
+problems: list[str] = []
+
+
+def _load_local():
+    """读 config.local.json。
+
+    文件不存在 → 正常回落默认值（用户可能全用环境变量，这是合法的）。
+    文件存在但读不了 / 不是合法 JSON / 顶层不是对象 → **直接报错退出**。
+
+    以前这里是 try/except 吞掉的，结果是「照文档复制了配置却全走默认值」，
+    跑完一整首歌才发现音色不对。现在宁可启动就炸。
+    """
+    if not _LOCAL_FILE.is_file():
+        return {}
+
+    try:
+        raw = _LOCAL_FILE.read_text(encoding="utf-8-sig")
+    except OSError as exc:
+        raise SystemExit(
+            f"读不了配置文件 {_LOCAL_FILE}\n"
+            f"  {type(exc).__name__}: {exc}\n"
+            "检查文件权限，或先把它改名/删掉。"
+        ) from None
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        # 把出错那一行原文打出来，比只给行列号有用得多。
+        lines = raw.splitlines()
+        context = ""
+        if 1 <= exc.lineno <= len(lines):
+            context = f"\n  第 {exc.lineno} 行： {lines[exc.lineno - 1].strip()[:160]}"
+        raise SystemExit(
+            f"配置文件不是合法 JSON：{_LOCAL_FILE}\n"
+            f"  {exc.msg}（第 {exc.lineno} 行，第 {exc.colno} 列）{context}\n"
+            "\n"
+            "常见原因：\n"
+            "  · 写了 // 或 # 注释（JSON 不支持注释）\n"
+            "  · 最后一项后面多了一个逗号\n"
+            "  · 用了中文引号 “ ” 或全角逗号 ，\n"
+            "  · Windows 路径里的反斜杠没转义（要么用 D:/x/y，要么写 D:\\\\x\\\\y）\n"
+            "\n"
+            "对照 pipeline/config.example.json 改一遍。"
+        ) from None
+
+    if not isinstance(data, dict):
+        raise SystemExit(
+            f"配置文件顶层必须是一个对象（{{...}}）：{_LOCAL_FILE}\n"
+            f"  实际读到的是 {type(data).__name__}。"
+        )
+    return data
+
+
+_LOCAL = _load_local()
 
 
 def _get(key, env, default=None):
@@ -70,21 +121,29 @@ UVR_CONFIG_NAME = str(_get(
     "uvrConfig", "SING_UVR_CONFIG", "config_vocals_mel_band_roformer_kim.yaml"))
 
 
-def _venv_python(home, env_key):
-    """venv 里的解释器：Windows 是 Scripts/python.exe，其它平台是 bin/python。"""
-    override = _get(env_key, env_key.upper().replace("_KEY", ""), None)
+def _venv_python(home, local_key, env_key):
+    """venv 里的解释器：Windows 是 Scripts/python.exe，其它平台是 bin/python。
+
+    先看显式配置（config.local.json 的 local_key / 环境变量 env_key），
+    再按惯例从 home 猜。猜的时候两个平台都探一遍。
+    """
+    override = _get(local_key, env_key, None)
     if override:
         return _path(override)
     if home is None:
         return None
-    win = home / "venv" / "Scripts" / "python.exe"
-    nix = home / "venv" / "bin" / "python"
-    return win if win.exists() else nix
+    for candidate in (home / "venv" / "Scripts" / "python.exe",
+                      home / "venv" / "bin" / "python",
+                      home / "venv" / "Scripts" / "python",
+                      home / "venv" / "bin" / "python.exe"):
+        if candidate.is_file():
+            return candidate
+    return home / "venv" / "Scripts" / "python.exe"
 
 
 # 分离阶段必须用 UVR 自己的环境；换声阶段必须用 RVC 自己的环境。
 # 两者依赖互相冲突，不能合并（见 docs/TROUBLESHOOTING.md）。
-UVR_PY = _venv_python(UVR_HOME, "SING_UVR_PY")
+UVR_PY = _venv_python(UVR_HOME, "uvrPy", "SING_UVR_PY")
 RVC_PY = _path(_get("rvcPy", "SING_RVC_PY",
                     str(RVC_HOME / "runtime" / "python.exe") if RVC_HOME else None))
 
@@ -99,11 +158,21 @@ _LOCK_FILE = _LOCAL.get("modelsLock") or str(ROOT / "models.lock.json")
 
 
 def load_model_lock():
-    try:
-        data = json.loads(Path(_LOCK_FILE).read_text(encoding="utf-8"))
-        return data if isinstance(data, dict) else {}
-    except Exception:
+    """models.lock.json 读不到就当没有（它是可选的），但读到了格式不对要提醒。"""
+    path = Path(_LOCK_FILE)
+    if not path.is_file():
         return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except json.JSONDecodeError as exc:
+        problems.append(
+            f"models.lock.json 不是合法 JSON（第 {exc.lineno} 行）：{path} —— 本次跳过模型校验，"
+            "建议删掉它重跑 scripts/hash-models.py")
+        return {}
+    if not isinstance(data, dict):
+        problems.append(f"models.lock.json 顶层不是对象：{path} —— 本次跳过模型校验")
+        return {}
+    return data
 
 
 _MODEL_LOCK = load_model_lock()
@@ -134,4 +203,6 @@ def as_dict():
         "rvcPy": str(RVC_PY) if RVC_PY else None,
         "mainPy": str(MAIN_PY),
         "modelsLock": _LOCK_FILE if _MODEL_LOCK else None,
+        "localConfig": str(_LOCAL_FILE) if _LOCAL else None,
+        "problems": list(problems),
     }
