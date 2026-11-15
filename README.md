@@ -147,6 +147,16 @@ node scripts/verify-mcp-tools.mjs C:\path\to\qq-bridge
 > 这条比自检重要。`selftest-mcp.mjs` 验的是「注册逻辑对不对」，
 > 而这条验的是「真实进程里到底有没有」。上游原版 38 个工具，接完应该 ≥39 个。
 
+**跑第 2 步之前**：如果还没装好 UVR/RVC，先给两个假解释器路径，
+否则会有一批用例因为「找不到解释器」而 error（不是代码坏了）：
+
+```bash
+# Linux/macOS
+SING_UVR_PY=/bin/true SING_RVC_PY=/bin/true \
+  python -B -m unittest discover -s pipeline/hq_cover/tests -t pipeline -p "test_*.py"
+# Windows: 值换成 C:\Windows\System32\cmd.exe（set 或 $env: 均可）
+```
+
 第 3 步是最容易被跳过、也最不该跳过的：它验证 `qq_sing` 这类工具到底注册上没有、
 权限闸门对不对、请求有没有打到正确的路由。**不跑它就去群里点歌，失败时你分不清是
 流水线的问题还是接线的问题。**
