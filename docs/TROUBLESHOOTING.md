@@ -99,21 +99,58 @@ python scripts/doctor.py
 
 它会明确告诉你哪一项找不到。
 
-### `torch.cuda.is_available()` 返回 False
+### 没有可用的 GPU 加速后端
 
-**原因**：装了 CPU 版 torch，或者 CUDA 版本和驱动不匹配。
+**症状**：`backend.BackendError: 没有可用的 GPU 加速后端`，或者
+`torch.cuda.is_available()` 返回 False。
 
-**怎么办**：
+**先分清是哪种卡**：
+
+| 你的卡 | `cuda.is_available()` 应该是 | 不是的话 |
+|---|---|---|
+| NVIDIA | True | 装了 CPU 版 torch，或驱动不匹配 |
+| AMD / Intel（Windows） | **False 是正常的** | 需要 `pip install torch-directml` |
+| AMD（Linux + ROCm） | True | ROCm 没装好 |
+
+查 NVIDIA：
 
 ```powershell
 D:\RVC\runtime\python.exe -c "import torch;print(torch.__version__, torch.version.cuda)"
-```
-
-如果是 `+cpu`，重装带 cu 的版本。检查驱动：
-
-```powershell
 nvidia-smi
 ```
+
+查 DirectML（AMD/Intel）：
+
+```powershell
+D:\RVC\runtime\python.exe -c "import torch_directml;print(torch_directml.device())"
+```
+
+**最直接的判据** —— 它会告诉你实际选了哪个后端：
+
+```powershell
+python scripts/doctor.py
+```
+
+想强制指定后端（比如同时装了 CUDA 和 DirectML）：
+
+```powershell
+$env:SING_BACKEND = "dml"    # 或 cuda
+```
+
+### `Could not run ... with arguments from the 'privateuseone' backend`
+
+**原因**：这是 **DirectML（AMD/Intel）专属**问题 —— 该算子没有 DML 实现。
+典型出现在 rmvpe 的某些路径上。
+
+**怎么办**：
+
+- 没有通用补丁，属于上游 torch-directml 的覆盖度问题
+- 能绕开的前提是上游 RVC 换了实现；本项目不提供伪造的降级
+- 想要稳定就跑 NVIDIA CUDA 卡
+- 这也意味着 **AMD 能用，但不是所有歌都能保证一次成功**，请以实际测试为准
+
+> 参考：[RVC issue #2569](https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI/issues/2569)
+> 里有用户在 AMD 上遇到同类报错，即使 `torch_directml` 能正常拿到设备。
 
 ---
 
@@ -301,6 +338,6 @@ $env:SING_RVC_PY = "C:\Windows\System32\cmd.exe"
 1. `python scripts/doctor.py` 的完整输出
 2. `pipeline/jobs/<任务id>.json` 里的 `stage` 和 `error`
 3. 对应阶段的 `*.log`（UVR / RVC 各一份）
-4. `nvidia-smi` 的输出
+4. `python scripts/doctor.py` 里的「加速后端」那一行（含后端类型与分块档）
 
 **别贴 Cookie、token、或带签名的下载链接。**

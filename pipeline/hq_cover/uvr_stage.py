@@ -150,11 +150,19 @@ def demix(mix, segment, overlap):
     from ml_collections import ConfigDict
 
     torch.set_num_threads(1)
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
-    torch.backends.cudnn.benchmark = False
-    if not torch.cuda.is_available():
-        raise RuntimeError("This verified UVR stage requires CUDA; no CPU fallback")
+    # 这三个开关只在 CUDA 后端存在；DirectML(AMD) 上没有。
+    if hasattr(torch.backends, "cuda") and torch.backends.cuda is not None:
+        torch.backends.cuda.matmul.allow_tf32 = False
+    if hasattr(torch.backends, "cudnn") and torch.backends.cudnn is not None:
+        torch.backends.cudnn.allow_tf32 = False
+        torch.backends.cudnn.benchmark = False
+    # 后端由 backend.select() 判定：CUDA / ROCm / DirectML 都支持（以前写死 CUDA）。
+    from hq_cover import backend
+    chosen = backend.select()
+    is_dml = chosen["kind"] == "dml"
+    # 分离用的 segment 是 44.1k 下的点数；DirectML 上按比例缩小以换稳定性。
+    if is_dml:
+        segment = max(2, min(segment, 441 * 8))
     # Do not parse unverified YAML (the pinned upstream YAML uses python/tuple).
     require_hash(WEIGHT, EXPECTED_WEIGHT)
     require_hash(CONFIG, EXPECTED_CONFIG)
@@ -168,10 +176,12 @@ def demix(mix, segment, overlap):
         os.chdir(APP)
         from separate import SeperateMDXC
         worker = object.__new__(SeperateMDXC)
-        settings = dict(device="cuda", is_pitch_change=False, is_roformer=True,
+        settings = dict(device="cuda" if not is_dml else "privateuseone",
+                        is_pitch_change=False, is_roformer=True,
                         roformer_config=cfg, mdx_c_configs=cfg, model_path=str(WEIGHT),
                         is_mdx_c_seg_def=False, mdx_segment_size=segment,
-                        overlap_mdx23=overlap, is_using_directml=False, is_other_gpu=False,
+                        overlap_mdx23=overlap, is_using_directml=is_dml,
+                        is_other_gpu=False,
                         is_vocal_main_target=True, is_denoise_model=False)
         for key, value in settings.items():
             setattr(worker, key, value)
@@ -191,7 +201,8 @@ def demix(mix, segment, overlap):
         finally:
             torch.load = original_load
         return (np.asarray(stems["Vocals"], dtype=np.float32).T,
-                np.asarray(stems["Instrumental"], dtype=np.float32).T)
+                np.asarray(stems["Instrumental"], dtype=np.float32).T,
+                segment)
     finally:
         os.chdir(old_cwd)
 
@@ -231,16 +242,19 @@ def run(args):
         report.update(input=source_info, source_sample_rate=source_info["sample_rate"],
                       sample_rate=SAMPLE_RATE, resampling=resampling,
                       channel_mapping="mono duplicated to stereo" if source_info["channels"] == 1 else "stereo unchanged")
-        voice, instrumental = demix(mix, args.segment, args.overlap)
+        voice, instrumental, used = demix(mix, args.segment, args.overlap)
         reconstruction = verify_stems(voice, instrumental, mix)
+        from hq_cover import backend as _backend
+        backend_kind = _backend.select()["kind"]
         outputs = {"vocals": write_float(out / "vocals.wav", voice, SAMPLE_RATE),
                    "instrumental": write_float(out / "instrumental.wav", instrumental, SAMPLE_RATE)}
         report.update(status="success", outputs=outputs, reconstruction=reconstruction,
                       model={"path": str(WEIGHT), "sha256": EXPECTED_WEIGHT,
                              "config": str(CONFIG), "config_sha256": EXPECTED_CONFIG},
                       engine="official SeperateMDXC.demix",
-                      settings={"segment": args.segment, "overlap": args.overlap, "batch_size": 1,
+                      settings={"segment": used, "overlap": args.overlap, "batch_size": 1,
                                 "cpu_threads": 1, "tf32": False, "weights_only": True,
+                                "backend": backend_kind,
                                 "dtype": "float32", "normalization": False, "post_denoise": False},
                       elapsed_seconds=time.time() - started, technical_checks_passed=True,
                       subjective_listening_verified=False,

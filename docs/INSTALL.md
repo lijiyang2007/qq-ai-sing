@@ -3,18 +3,41 @@
 分三块：**流水线**（能单独跑）→ **UVR 分离** → **RVC 换声**。
 最后一块是可选的 QQ 桥接接入。
 
-全程假设 Windows + NVIDIA 显卡（≥8 GB 显存）。Linux 也能跑，但脚本是 PowerShell 示例。
+支持 **NVIDIA（CUDA）** 和 **AMD / Intel（DirectML，Windows）**，
+Linux 上 AMD 走 ROCm。下面的示例用 PowerShell，Linux 换成对应命令即可。
 
 ---
 
 ## 0. 硬件与前置
 
-| 项 | 最低 | 说明 |
+| 项 | 最低 | 推荐 | 说明 |
+|---|---|---|---|
+| 显卡 | **4 GB 显存** | 8 GB+ | NVIDIA 走 CUDA、AMD/Intel 走 DirectML（Windows）、Linux AMD 走 ROCm |
+| 内存 | 16 GB | 32 GB | CPU 兜底时需要更多 |
+| 磁盘 | 20 GB 空闲 | | 权重约 1.2 GB，产物更大 |
+| Python | 3.10 | | 3.11/3.12 在 torch 和 RVC 上兼容性差 |
+
+**关于显存**：RVC 上游对 ≤4 GB 的卡有专门的保守分块档
+（`x_pad=1, x_query=5, x_center=30, x_max=32`），本项目会按显存自动选。
+4 GB 能跑，只是慢一些，而且整首渲染时间会更长。
+
+**关于显卡厂商**：
+
+| 平台 | 后端 | 怎么装 |
 |---|---|---|
-| 显卡 | NVIDIA 8 GB 显存 | UVR 和 RVC 都要 CUDA，CPU 跑会慢到不可用 |
-| 内存 | 16 GB | |
-| 磁盘 | 20 GB 空闲 | 权重约 1.2 GB，产物更大 |
-| Python | 3.10 | 3.11/3.12 在 torch 和 RVC 上兼容性差 |
+| NVIDIA (Windows/Linux) | CUDA | 装 CUDA 版 torch |
+| AMD / Intel (Windows) | **DirectML** | `pip install torch-directml` |
+| AMD (Linux) | ROCm | 装 ROCm 版 torch，`torch.cuda.is_available()` 会返回 True |
+| 无独显 | 不推荐 | 上游可退 CPU，但整首渲染要几小时，实际不可用 |
+
+`python scripts/doctor.py` 会打印实际选中的后端。也可以用环境变量
+`SING_BACKEND=cuda|dml` 强制指定。
+
+> **DirectML 的两个已知限制**（实测 + 上游 issue #2569）：
+> 半精度支持不一致（本项目在 DML 上强制 fp32），
+> 且个别算子未实现（例如某些 rmvpe 路径报
+> `Could not run ... with arguments from the 'privateuseone' backend`）。
+> 后者没有通用补丁，只能换 NVIDIA 卡或等上游补齐。
 
 **三个 Python 环境，互相不能合并**：
 
@@ -128,11 +151,28 @@ D:\RVC\
 
 ### 3.2 检查环境
 
+先看 RVC 目录里的 torch 能不能认出你的卡：
+
 ```powershell
-D:\RVC\runtime\python.exe -c "import torch,faiss,librosa;print(torch.__version__, torch.cuda.is_available())"
+D:\RVC\runtime\python.exe -c "import torch,faiss,librosa;print('torch',torch.__version__,'cuda',torch.cuda.is_available())"
 ```
 
-要能看到 `True`（CUDA 可用）和 faiss 版本号。
+- NVIDIA / Linux-ROCm：`cuda True` 就对了
+- AMD / Intel（Windows）：`cuda False` 是**正常**的，接着确认 DirectML：
+
+```powershell
+D:\RVC\runtime\python.exe -c "import torch_directml;print('dml ok', torch_directml.device())"
+```
+
+两条里至少有一条通。都报错的话，按上一节那张表装对应的 torch。
+
+**最终以这个为准**（它会告诉你实际会走哪个后端、用哪档分块）：
+
+```powershell
+python scripts/doctor.py
+# [OK] 加速后端   dml / privateuseone:0（DirectML adapter，显存 未知，分块档 (1, 5, 30, 32)）
+# [OK] 加速后端   cuda / cuda:0（NVIDIA GeForce RTX 4060 Laptop GPU，显存 8 GiB，分块档 (3, 10, 60, 65)）
+```
 
 ### 3.3 训练你自己的音色
 

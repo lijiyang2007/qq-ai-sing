@@ -140,14 +140,19 @@ def read_only_config(Config, config_files, torch):
                 data[name] = json.load(stream)
         return data
     def device_config(self):
-        if not torch.cuda.is_available():
-            raise RuntimeError("RVC FP16 stage requires CUDA; no mutating CPU fallback")
-        self.device, self.is_half, self.n_cpu = "cuda:0", True, 1
-        self.gpu_name = torch.cuda.get_device_name(0)
-        self.gpu_mem = int(torch.cuda.get_device_properties(0).total_memory / 1024 ** 3 + 0.4)
+        # 后端选择交给 backend.select()：CUDA / ROCm / DirectML 都支持。
+        # 以前这里是 `if not torch.cuda.is_available(): raise`，AMD 卡直接被拒。
+        from hq_cover import backend
+        chosen = backend.select()
+        self.device = chosen["device"]
+        self.is_half = chosen["is_half"]
+        self.n_cpu = 1
+        self.gpu_name = chosen["gpu_name"]
+        self.gpu_mem = chosen["gpu_mem"]
         self.use_jit = False
-        self.dml = False
-        return (1, 5, 30, 32) if self.gpu_mem <= 4 else (3, 10, 60, 65)
+        # 上游 Pipeline 用 self.dml 判断是否走 DirectML 的兼容路径
+        self.dml = chosen["kind"] == "dml"
+        return chosen["dims"]
     old_json = cls.__dict__["load_config_json"]
     old_device = cls.__dict__["device_config"]
     old_argv = sys.argv
@@ -170,11 +175,15 @@ def load_engine():
                       MKL_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", NUMBA_NUM_THREADS="1")
     import torch
     torch.set_num_threads(1)
-    torch.backends.cuda.matmul.allow_tf32 = False
-    torch.backends.cudnn.allow_tf32 = False
-    torch.backends.cudnn.benchmark = False
-    if not torch.cuda.is_available():
-        raise RuntimeError("This verified FP16 RVC stage requires CUDA")
+    # 这三个开关只在 CUDA 后端存在；DirectML(AMD) 上访问会 AttributeError。
+    if hasattr(torch.backends, "cuda") and torch.backends.cuda is not None:
+        torch.backends.cuda.matmul.allow_tf32 = False
+    if hasattr(torch.backends, "cudnn") and torch.backends.cudnn is not None:
+        torch.backends.cudnn.allow_tf32 = False
+        torch.backends.cudnn.benchmark = False
+    # 后端可用性由 backend.select() 判定（CUDA / ROCm / DirectML），这里不再写死 CUDA。
+    from hq_cover import backend
+    backend.select()
     sys.path.insert(0, str(RVC))
     spec = importlib.util.spec_from_file_location("infer.modules.vc.pipeline", PIPELINE)
     if spec is None or spec.loader is None:

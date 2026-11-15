@@ -187,7 +187,11 @@ node scripts/check-deps.mjs path/to/qq-bridge/src/bridge.js
 
 - **QQ 语音消息会被转 SILK**，接收端不保证无损。本地 WAV 母带才是原始质量。
 - **不做演唱边界推断**：漏进人声轨的乐器可能被 RVC 变形成伪人声。这是刻意的取舍。
-- **8 GB 显存**是下限，整首需要 5～15 分钟。
+- **显存 4 GB 起**（RVC 上游对 ≤4 GB 有专门的保守分块档，本项目自动选用）。
+  8 GB 时整首约 5～15 分钟；4 GB 明显更慢。
+- **DirectML（AMD/Intel）能跑但有算子风险**：半精度默认关闭，
+  个别 rmvpe 路径可能报 `Could not run ... 'privateuseone' backend`。
+  NVIDIA CUDA 是最稳的路径。
 - **必须有自己的网易云账号**（无损音源要登录）。不提供任何绕过。
 - 技术验收 ≠ 听觉验收。流水线能证明"没坏"，不能证明"好听"。
 

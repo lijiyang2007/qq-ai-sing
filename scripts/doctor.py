@@ -59,6 +59,26 @@ def main() -> int:
     except Exception as exc:
         check(BAD, "requests", str(exc))
 
+    # 加速后端（CUDA / ROCm / DirectML）—— 决定 RVC 和 UVR 能不能跑
+    try:
+        import torch
+        check(OK, "torch", torch.__version__)
+        try:
+            from hq_cover import backend
+            chosen = backend.select()
+            check(OK, "加速后端",
+                  "%s / %s（%s，显存 %s GiB，分块档 %s）"
+                  % (chosen["kind"], chosen["device"], chosen["gpu_name"],
+                     chosen["gpu_mem"] or "未知", chosen["dims"]))
+            check(OK if chosen["is_half"] else WARN, "半精度",
+                  "开启（CUDA fp16）" if chosen["is_half"] else "关闭（DirectML 默认 fp32，正常）")
+        except backend.BackendError as exc:
+            check(BAD, "加速后端", str(exc))
+        except Exception as exc:
+            check(BAD, "加速后端", "%s: %s" % (type(exc).__name__, exc))
+    except Exception as exc:
+        check(BAD, "torch", str(exc))
+
     # 三个解释器
     for label, path in (("UVR 解释器", config.UVR_PY),
                         ("RVC 解释器", config.RVC_PY)):

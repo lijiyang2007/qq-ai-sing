@@ -306,7 +306,7 @@ node scripts/verify-mcp-tools.mjs C:\path\to\qq-bridge
 
 | 字段 | 说明 |
 |---|---|
-| `maxQueuedTotal` | 并发上限，**别超过 5**；8 GB 显存一次只能跑一个 |
+| `maxQueuedTotal` | 并发上限，**别超过 5**；一块显卡一次只能跑一个（4 GB 卡更不该并发） |
 | `dailyUnlimitedTargets` | 豁免每日限额的会话，格式 `private:QQ号` / `group:群号` |
 
 > `root` 留空会直接报「点歌功能未配置」，不会静默用某个默认路径 ——
