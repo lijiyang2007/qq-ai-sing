@@ -14,7 +14,7 @@ QQ 消息「唱首 我怀念的」
 qq-bridge ──► cover_job.py submit ──► 任务 JSON
                                           │
                                           ▼
-                          ① 网易云官方接口取无损 FLAC（校验 MD5 + 完整解码）
+                          ① 取音源（默认网易云无损；也可用 B 站链接）
                           ② UVR MelBandRoFormer 分离人声 / 伴奏
                           ③ RVC 换声（你的音色模型，全曲逐块）
                           ④ float 混音 + 真峰值/削波/帧数验收
@@ -193,6 +193,59 @@ node scripts/check-deps.mjs path/to/qq-bridge/src/bridge.js
 
 ---
 
+## 音源是可换的（默认网易云）
+
+**开箱可用两种**：
+
+| 来源 | 怎么用 | 是否无损 | 说明 |
+|---|---|---|---|
+| 网易云（默认） | 直接给歌名 `唱首 我怀念的 孙燕姿` | ✅ 官方 lossless FLAC | 需要自己的账号 Cookie |
+| B 站 | 给视频链接 | ❌ 有损，会明确标注 | 走 `--video-url` 入口，不做伪装 |
+
+> B 站那条是**显式选择**：`pipeline.process(..., video_url=...)`，
+> 产物里 `original_lossless=False`、`source_notice` 会写明"用户主动选的有损源"。
+> 它**不会**在网易云失败时被自动拿来顶替 —— 这是刻意的。
+
+### 想换成 QQ 音乐 / 酷狗 / 本地文件？
+
+**可以，但要自己写一个采集器。** 音源层不是插件化的，目前只有
+`source.py`（网易云）和 `bilibili_source.py`（B 站）两个实现，
+`pipeline.process()` 里是按 `video_url` 有没有传来二选一。
+
+要加第三个来源，最少改这四处：
+
+| 位置 | 要做什么 |
+|---|---|
+| 新建 `xxx_source.py` | 实现 `acquire_xxx(query_or_url, outdir) -> dict`，返回字段照抄 `bilibili_source.acquire_bilibili` 的形状 |
+| `pipeline.py` 的分派 | 加一个分支（现在只有 `video_url` / 否则网易云） |
+| `artifact_cache.py` 的 `_identity()` | 加这个 `source_kind` 的身份字段，否则缓存会拒绝 |
+| `source_kind` 的判定 | `pipeline.py` 里 `source_kind='bilibili' if ... else 'netease'` 这一行要扩展 |
+
+**返回的 dict 必须包含**（这是下游校验依赖的契约）：
+
+```python
+{
+  'source_kind': 'xxx',            # 新增的平台名
+  'source_path': str,              # 解码后的音频文件
+  'source_sha256': str,            # 上面那个文件的哈希
+  'original_lossless': bool,       # 必须如实标注，不能把有损写成无损
+  'status': 'verified_xxx',        # 各 stage 会检查这个值
+  # 可选但建议：'track'/'video' 身份信息，供缓存做键
+}
+```
+
+**为什么没有做成插件**：每个平台的"怎么证明这是无损、这是哪一版"都不一样。
+网易云能拿 FLAC STREAMINFO + 官方 MD5 三重校验，QQ 音乐不一定给这些字段。
+硬套一个统一接口，只会让人以为"填个 URL 就行"，然后在质量校验那里翻车。
+**要加来源，请连带把该来源的"无损证明"一起想清楚。**
+
+### 只在 QQ 里用 B 站链接
+
+桥接侧已经接好了，不需要改代码：在群里直接发视频链接，或
+`唱这个 https://www.bilibili.com/video/BV...`。
+
+---
+
 ## 已知限制
 
 - **QQ 语音消息会被转 SILK**，接收端不保证无损。本地 WAV 母带才是原始质量。
@@ -202,7 +255,8 @@ node scripts/check-deps.mjs path/to/qq-bridge/src/bridge.js
 - **DirectML（AMD/Intel）能跑但有算子风险**：半精度默认关闭，
   个别 rmvpe 路径可能报 `Could not run ... 'privateuseone' backend`。
   NVIDIA CUDA 是最稳的路径。
-- **必须有自己的网易云账号**（无损音源要登录）。不提供任何绕过。
+- **必须有自己的网易云账号**（默认音源要登录）。不提供任何绕过。
+  不想用网易云可以走 B 站链接，或自己加一个音源实现（见「音源是可换的」一节）。
 - 技术验收 ≠ 听觉验收。流水线能证明"没坏"，不能证明"好听"。
 
 ---

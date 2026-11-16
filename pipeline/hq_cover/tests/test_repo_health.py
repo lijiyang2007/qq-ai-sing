@@ -258,6 +258,50 @@ class NoMachinePathsTests(unittest.TestCase):
         )
 
 
+class AudioSourceDocsTests(unittest.TestCase):
+    """README 必须说清「音源是可换的」，且描述与代码一致。
+
+    背景：有人以为仓库把网易云写死了。实际上 B 站已经支持（显式 --video-url），
+    只是加第三个来源要动四处代码 —— 这件事必须写在 README 里，否则别人只能猜。
+    """
+
+    def test_readme_documents_swappable_source(self):
+        text = (REPO / "README.md").read_text(encoding="utf-8")
+        self.assertIn("音源是可换的", text)
+        # 必须提到这两条现有来源
+        self.assertIn("网易云", text)
+        self.assertIn("B 站", text)
+        # 必须指出加新来源要改哪里，而不是让人以为填个 URL 就行
+        self.assertIn("artifact_cache.py", text)
+
+    def test_readme_lists_required_source_contract(self):
+        text = (REPO / "README.md").read_text(encoding="utf-8")
+        for field in ("source_kind", "source_path", "source_sha256", "original_lossless"):
+            self.assertIn(field, text, f"README 的音源契约缺 {field}")
+
+    def test_bilibili_is_actually_supported(self):
+        """README 说 B 站可用，代码里必须真的有这条路。"""
+        pipeline_text = (PIPELINE / "hq_cover" / "pipeline.py").read_text(encoding="utf-8")
+        self.assertIn("acquire_bilibili", pipeline_text)
+        self.assertIn("video_url", pipeline_text)
+        self.assertTrue((PIPELINE / "hq_cover" / "bilibili_source.py").is_file())
+
+    def test_bilibili_marks_itself_lossy(self):
+        """B 站来源必须如实标注有损，不能伪装成无损。"""
+        src = (PIPELINE / "hq_cover" / "bilibili_source.py").read_text(encoding="utf-8")
+        self.assertIn("'original_lossless':False", src.replace(" ", ""))
+        self.assertIn("user_selected_source", src)
+
+    def test_no_silent_fallback_to_bilibili(self):
+        """网易云失败时不能偷偷改用 B 站。"""
+        pipeline_text = (PIPELINE / "hq_cover" / "pipeline.py").read_text(encoding="utf-8")
+        # acquire_bilibili 只应在 video_url 分支里被调用
+        acquire_idx = pipeline_text.index("acquire_bilibili")
+        video_branch = pipeline_text.index("if video_url is not None:")
+        self.assertGreater(acquire_idx, video_branch,
+                           "acquire_bilibili 出现在 video_url 分支之外，可能被当成兜底")
+
+
 class PackageJsonTests(unittest.TestCase):
     def test_valid_json(self):
         data = json.loads((REPO / "package.json").read_text(encoding="utf-8-sig"))
