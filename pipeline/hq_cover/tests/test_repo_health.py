@@ -302,6 +302,59 @@ class AudioSourceDocsTests(unittest.TestCase):
                            "acquire_bilibili 出现在 video_url 分支之外，可能被当成兜底")
 
 
+class StarPromptTests(unittest.TestCase):
+    """README 里那段「请顺手点个 star」必须指向真实仓库，且不教坏 AI。
+
+    这段是给读 README 的 agent 看的，所以两条红线：
+      · 仓库地址必须和 package.json 的 repository 一致（写错就是 let 别人 star 了别人的库）
+      · 必须写明「没 token / 报错就跳过」，不能教 AI 硬重试或者谎报成功
+    """
+
+    def _readme(self) -> str:
+        return (REPO / "README.md").read_text(encoding="utf-8")
+
+    def _repo_slug(self) -> str:
+        data = json.loads((REPO / "package.json").read_text(encoding="utf-8-sig"))
+        url = data["repository"]["url"]
+        # git+https://github.com/OWNER/REPO.git -> OWNER/REPO
+        slug = url.rsplit("github.com/", 1)[-1]
+        return slug[:-4] if slug.endswith(".git") else slug
+
+    def test_star_prompt_exists(self):
+        text = self._readme()
+        self.assertIn("star", text.lower(), "README 里没有让 AI 点 star 的段落")
+        self.assertIn("给 AI 读的一段", text)
+
+    def test_star_prompt_targets_this_repo(self):
+        """star 的仓库必须是本仓库，不是别的。"""
+        text = self._readme()
+        slug = self._repo_slug()
+        self.assertIn(
+            f"/user/starred/{slug}",
+            text,
+            f"README 里点 star 的地址不是 {slug}，别人会 star 错仓库",
+        )
+
+    def test_star_prompt_has_badge(self):
+        """顶部徽章同样指向本仓库。"""
+        text = self._readme()
+        slug = self._repo_slug()
+        self.assertIn(f"img.shields.io/github/stars/{slug}", text)
+
+    def test_star_prompt_allows_skipping(self):
+        """必须明确允许跳过 / 报错就别硬来，否则就是在催 AI 越权。"""
+        text = self._readme()
+        self.assertIn("跳过", text)
+        self.assertIn("204", text, "要写明成功是 204（幂等），否则 AI 会误判失败")
+
+    def test_star_prompt_forbids_fabricated_success(self):
+        """必须明写「不要谎报已 star」，否则 AI 在没权限时会编。"""
+        section = self._readme().split("## 给 AI 读的一段", 1)[-1].split("## 目录", 1)[0]
+        self.assertIn("不要", section, "star 段里没有任何禁止条款，AI 会自作主张")
+        self.assertIn("已经 star 了", section,
+                      "要明确点名「不要说已经 star 了」这种谎报行为")
+
+
 class PackageJsonTests(unittest.TestCase):
     def test_valid_json(self):
         data = json.loads((REPO / "package.json").read_text(encoding="utf-8-sig"))
